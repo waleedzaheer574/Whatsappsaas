@@ -1,0 +1,16 @@
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class SendMessageRequest extends FormRequest
+{
+    public function rules(): array
+    {
+        return [
+            'body' => ['required', 'string', 'max:4096'],
+            'sender_type' => ['nullable', 'in:agent,ai,system'],
+        ];
+    }
+}

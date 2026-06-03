@@ -3,9 +3,121 @@
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 @source '../**/*.blade.php';
-@source '../**/*.js';
+@source '../**/*.vue';
+@source '../**/*.ts';
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --color-ink: #070B1A;
+  --color-midnight: #0F172A;
+  --color-violetGlow: #7C3AED;
+  --color-neonBlue: #38BDF8;
+  --color-whatsapp: #25D366;
+  --shadow-glow: 0 24px 80px rgba(124,58,237,.24);
+  --shadow-glass: 0 18px 60px rgba(15,23,42,.12);
+}
+
+body {
+  background: #f8fafc;
+  color: #020617;
+}
+
+.dark body {
+  background: #070B1A;
+  color: #fff;
+}
+
+.glass-panel {
+  @apply border border-white/70 bg-white/75 shadow-glass backdrop-blur-2xl dark:border-white/10 dark:bg-white/[.06];
+}
+
+.premium-card {
+  @apply rounded-[28px] border border-slate-200/80 bg-white/85 p-6 shadow-glass backdrop-blur-xl dark:border-white/10 dark:bg-white/[.055];
+}
+
+.section-wrap {
+  @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+}
+
+.gradient-text {
+  @apply bg-gradient-to-r from-violet-600 via-indigo-500 to-sky-400 bg-clip-text text-transparent;
+}
+
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-14px); }
+}
+
+.animate-floaty {
+  animation: floaty 5s ease-in-out infinite;
+}
+
+.dash-card {
+  @apply rounded-[24px] border border-white/80 bg-white/82 p-4 shadow-glass backdrop-blur-2xl dark:border-white/10 dark:bg-[#10182b]/88 sm:p-5;
+}
+
+.dash-card h2 {
+  @apply text-base font-black;
+}
+
+.dark-card {
+  @apply dark:bg-[#0d1528]/95;
+}
+
+.form-control {
+  @apply w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 dark:border-white/10 dark:bg-[#111a2f] dark:text-white dark:focus:border-violet-400;
+}
+
+.form-control::placeholder {
+  @apply text-slate-400 dark:text-slate-500;
+}
+
+select.form-control {
+  color-scheme: light;
+}
+
+.dark select.form-control {
+  color-scheme: dark;
+}
+
+select.form-control option {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.dark select.form-control option {
+  background: #111a2f;
+  color: #ffffff;
+}
+
+.app-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.dark .app-scrollbar {
+  scrollbar-color: #7c3aed #0f172a;
+}
+
+.app-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.app-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #cbd5e1;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.dark .app-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #8b5cf6, #4f46e5);
+  border: 2px solid #0f172a;
 }
