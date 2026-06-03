@@ -34,7 +34,7 @@ body {
 }
 
 .premium-card {
-  @apply rounded-[28px] border border-slate-200/80 bg-white/85 p-6 shadow-glass backdrop-blur-xl dark:border-white/10 dark:bg-white/[.055];
+  @apply rounded-[22px] border border-slate-200/80 bg-white/85 p-4 shadow-glass backdrop-blur-xl dark:border-white/10 dark:bg-white/[.055] sm:rounded-[28px] sm:p-6;
 }
 
 .section-wrap {
