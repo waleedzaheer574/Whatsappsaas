@@ -43,6 +43,7 @@ Route::prefix('app')->middleware('auth')->name('dashboard.')->group(function () 
     Route::middleware('subscribed')->group(function () {
         Route::get('/dashboard', [PageController::class, 'dashboard'])->name('overview');
         Route::get('/inbox', [PageController::class, 'dashboard'])->defaults('screen', 'Inbox / Live Chat')->name('inbox');
+        Route::get('/whatsapp-accounts', [PageController::class, 'dashboard'])->defaults('screen', 'WhatsApp Accounts')->name('whatsapp.accounts');
         Route::get('/contacts', [PageController::class, 'dashboard'])->defaults('screen', 'Contacts CRM')->name('contacts');
         Route::get('/broadcasts', [PageController::class, 'dashboard'])->defaults('screen', 'Broadcast Campaigns')->name('broadcasts');
         Route::get('/automations', [PageController::class, 'dashboard'])->defaults('screen', 'AI Automations')->name('automations');
@@ -61,9 +62,11 @@ Route::prefix('app')->middleware('auth')->name('dashboard.')->group(function () 
         Route::delete('/contacts/{contact}', [DashboardActionController::class, 'deleteContact'])->name('contacts.destroy');
         Route::post('/conversations/{conversation}/messages', [DashboardActionController::class, 'message'])->name('conversations.messages.store');
         Route::post('/conversations/{conversation}/read', [DashboardActionController::class, 'markConversationRead'])->name('conversations.read');
+        Route::post('/conversations/{conversation}/clear', [DashboardActionController::class, 'clearConversation'])->name('conversations.clear');
         Route::delete('/conversations/{conversation}', [DashboardActionController::class, 'deleteConversation'])->name('conversations.destroy');
         Route::post('/messages/status/sync', [DashboardActionController::class, 'syncMessageStatuses'])->name('messages.status.sync');
         Route::post('/messages/{message}/status', [DashboardActionController::class, 'messageStatus'])->name('messages.status');
+        Route::post('/messages/{message}/edit', [DashboardActionController::class, 'editMessage'])->name('messages.edit');
         Route::delete('/messages/{message}', [DashboardActionController::class, 'deleteMessage'])->name('messages.destroy');
         Route::post('/team', [DashboardActionController::class, 'team'])->name('team.store');
         Route::post('/whatsapp-accounts', [DashboardActionController::class, 'whatsappAccount'])->name('whatsapp.store');

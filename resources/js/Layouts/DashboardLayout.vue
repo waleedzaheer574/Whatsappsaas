@@ -183,6 +183,7 @@ const searchResults = computed(() => {
 const items = computed(() => [
   { label: 'Dashboard', short: 'Home', href: '/app/dashboard', icon: Home },
   { label: 'Inbox', short: 'Inbox', href: '/app/inbox', icon: Inbox, badge: notificationCount.value ? compactCount(notificationCount.value) : '' },
+  { label: 'WhatsApp Accounts', short: 'WhatsApp', href: '/app/whatsapp-accounts', icon: Database },
   { label: 'CRM', short: 'CRM', href: '/app/contacts', icon: Users },
   { label: 'Automations', short: 'Auto', href: '/app/automations', icon: Workflow },
   { label: 'Broadcasts', short: 'Send', href: '/app/broadcasts', icon: Send },

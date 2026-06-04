@@ -145,25 +145,6 @@ Content-Type: application/json</pre>
             </div>
           </div>
 
-        <div class="mt-5 grid gap-4 rounded-[22px] border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-white/5 sm:rounded-3xl sm:p-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,420px)]">
-          <form class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" @submit.prevent="submitModule">
-            <label v-for="field in whatsAppSetupFields" :key="field.name" class="grid gap-2 text-sm font-bold">
-              <span>{{ field.label }}</span>
-              <input v-model="moduleForm[field.name]" :type="field.type ?? 'text'" class="form-control" :placeholder="field.placeholder" />
-              <span v-if="moduleForm.errors[field.name]" class="text-xs text-red-500">{{ moduleForm.errors[field.name] }}</span>
-            </label>
-            <div class="flex items-end">
-              <button class="w-full rounded-2xl bg-violet-600 px-5 py-3 text-sm font-black text-white shadow-glow disabled:opacity-60" :disabled="moduleForm.processing">Connect WhatsApp</button>
-            </div>
-          </form>
-          <div class="min-w-0 rounded-2xl bg-white p-4 text-sm dark:bg-[#10182b]">
-            <h2>Webhook Setup</h2>
-            <p class="mt-2 text-xs font-bold text-slate-500 dark:text-slate-400">Use this URL in Meta Webhooks for messages and status updates.</p>
-            <div class="mt-3 overflow-x-auto rounded-xl bg-slate-100 p-3 text-xs font-black text-slate-700 dark:bg-white/10 dark:text-slate-200">{{ activeWebhookUrl }}</div>
-            <p class="mt-3 text-xs text-slate-500">Verify token: use the same token you enter in the form.</p>
-          </div>
-        </div>
-
         <div class="mt-5 grid overflow-hidden rounded-[22px] border border-violet-200 bg-violet-50/70 shadow-glass dark:border-white/10 dark:bg-[#080b1a] sm:rounded-3xl xl:h-[calc(100vh-330px)] xl:min-h-[620px] xl:max-h-[820px] xl:grid-cols-[380px_minmax(0,1fr)]">
           <aside class="flex min-h-0 min-w-0 flex-col border-b border-violet-200 bg-white dark:border-white/10 dark:bg-[#10182b] xl:border-b-0 xl:border-r">
             <div class="flex shrink-0 items-center gap-3 border-b border-violet-100 bg-violet-50 px-4 py-3 dark:border-white/10 dark:bg-[#161f35]">
@@ -181,7 +162,10 @@ Content-Type: application/json</pre>
             <div class="app-scrollbar max-h-72 min-h-0 flex-1 overflow-y-auto xl:max-h-none">
               <div v-for="chat in filteredChatRows" :key="chat.id ?? chat.name" :class="['group flex min-w-0 items-center gap-2 border-b border-violet-100/70 px-3 py-3 transition dark:border-white/5', activeChat?.id === chat.id ? 'bg-violet-100/80 dark:bg-violet-500/15' : 'hover:bg-violet-50 dark:hover:bg-white/[.06]']">
                 <button type="button" class="flex min-w-0 flex-1 items-center gap-3 text-left" @click="openConversation(chat)">
-                  <div class="grid size-12 shrink-0 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 font-black text-white" @click.stop="openContactProfile(chat)">{{ initial(chat.name) }}</div>
+                  <div class="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 font-black text-white" @click.stop="openContactProfile(chat)">
+                    <img v-if="chat.avatar" :src="chat.avatar" class="size-full object-cover" alt="contact" />
+                    <span v-else>{{ initial(chat.name) }}</span>
+                  </div>
                   <div class="min-w-0">
                     <p class="truncate text-sm font-black">{{ chat.name }}</p>
                     <p class="truncate text-xs text-slate-500 dark:text-slate-400">{{ chat.phone_number }}</p>
@@ -192,9 +176,15 @@ Content-Type: application/json</pre>
                     <span v-if="chat.unread_count" class="rounded-full bg-violet-600 px-2 py-0.5 text-[10px] font-black text-white">{{ chat.unread_count }}</span>
                   </div>
                 </button>
-                <div class="hidden shrink-0 gap-1 group-hover:flex">
-                  <button class="grid size-8 place-items-center rounded-full bg-amber-500/10 text-[10px] font-black text-amber-600" type="button" @click="toggleContactBlock(chat)">{{ isBlocked(chat) ? 'Un' : 'Blk' }}</button>
-                  <button class="grid size-8 place-items-center rounded-full bg-red-500/10 text-xs font-black text-red-500" type="button" @click="deleteChat(chat.id)">Del</button>
+                <div class="relative shrink-0" data-chat-menu-root>
+                  <button class="grid size-8 place-items-center rounded-full bg-violet-500/10 text-violet-600 opacity-100 transition hover:bg-violet-500/15 sm:opacity-0 sm:group-hover:opacity-100" type="button" @click="toggleChatMenu(chat.id)">
+                    <MoreVertical class="size-4" />
+                  </button>
+                  <div v-if="chatMenuId === chat.id" class="absolute right-0 top-9 z-30 w-44 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 text-xs font-black shadow-glass dark:border-white/10 dark:bg-[#111a2f]">
+                    <button class="w-full rounded-xl px-3 py-2 text-left text-slate-700 hover:bg-violet-50 dark:text-slate-200 dark:hover:bg-white/10" type="button" @click="clearChat(chat.id)">Clear chat</button>
+                    <button class="w-full rounded-xl px-3 py-2 text-left text-amber-600 hover:bg-amber-50 dark:text-amber-200 dark:hover:bg-amber-500/10" type="button" @click="toggleContactBlock(chat)">{{ isBlocked(chat) ? 'Unblock contact' : 'Block contact' }}</button>
+                    <button class="w-full rounded-xl px-3 py-2 text-left text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10" type="button" @click="deleteContact(chat.contact_id ?? chat.id)">Delete contact</button>
+                  </div>
                 </div>
               </div>
               <div v-if="!filteredChatRows.length" class="m-3 rounded-2xl border border-dashed border-slate-200 p-5 text-center text-sm font-bold text-slate-400 dark:border-white/10">
@@ -205,7 +195,10 @@ Content-Type: application/json</pre>
 
           <section class="flex min-h-[520px] min-w-0 flex-col xl:min-h-0">
             <div class="shrink-0 flex items-center gap-2 border-b border-violet-100 bg-violet-50 p-3 dark:border-white/10 dark:bg-[#161f35] sm:gap-3 sm:p-4">
-              <button v-if="activeChat" type="button" class="grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 font-black text-white sm:size-11" @click="openContactProfile(activeChat)">{{ initial(activeChat?.name ?? 'C') }}</button>
+              <button v-if="activeChat" type="button" class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 font-black text-white sm:size-11" @click="openContactProfile(activeChat)">
+                <img v-if="activeChat.avatar" :src="activeChat.avatar" class="size-full object-cover" alt="contact" />
+                <span v-else>{{ initial(activeChat?.name ?? 'C') }}</span>
+              </button>
               <div v-else class="grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 font-black text-white sm:size-11">{{ initial('C') }}</div>
               <button type="button" class="min-w-0 text-left" :disabled="!activeChat" @click="openContactProfile(activeChat)">
                 <p class="truncate text-sm font-black">{{ activeChat?.name ?? 'Select a conversation' }}</p>
@@ -213,13 +206,22 @@ Content-Type: application/json</pre>
               </button>
               <span v-if="activeChat" :class="['ml-auto hidden rounded-full px-3 py-1 text-xs font-black sm:inline-flex', activeChatBlocked ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-200' : 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-200']">{{ activeChatBlocked ? 'Blocked' : 'Open' }}</span>
               <button v-if="activeChat" class="rounded-xl bg-amber-50 px-2 py-2 text-[11px] font-black text-amber-700 dark:bg-amber-500/10 dark:text-amber-200 sm:px-3 sm:text-xs" type="button" @click="toggleContactBlock(activeChat)">{{ activeChatBlocked ? 'Unblock' : 'Block' }}</button>
-              <button v-if="activeChat" class="rounded-xl bg-red-50 px-2 py-2 text-[11px] font-black text-red-600 dark:bg-red-500/10 sm:px-3 sm:text-xs" type="button" @click="deleteChat(activeChat.id)">Delete</button>
-              <button v-if="activeChat?.contact_id" class="hidden rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-700 dark:bg-red-500/10 dark:text-red-200 sm:inline-flex" type="button" @click="deleteContact(activeChat.contact_id)">Delete Contact</button>
+              <div v-if="activeChat" class="relative" data-chat-menu-root>
+                <button class="grid size-10 place-items-center rounded-xl bg-white/70 text-violet-600 hover:bg-violet-100 dark:bg-white/10 dark:text-violet-200 dark:hover:bg-white/15" type="button" @click="activeChatMenuOpen = !activeChatMenuOpen">
+                  <MoreVertical class="size-5" />
+                </button>
+                <div v-if="activeChatMenuOpen" class="absolute right-0 top-12 z-40 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 text-xs font-black shadow-glass dark:border-white/10 dark:bg-[#111a2f]">
+                  <button class="w-full rounded-xl px-3 py-2 text-left text-slate-700 hover:bg-violet-50 dark:text-slate-200 dark:hover:bg-white/10" type="button" @click="clearChat(activeChat.id)">Clear chat</button>
+                  <button class="w-full rounded-xl px-3 py-2 text-left text-amber-600 hover:bg-amber-50 dark:text-amber-200 dark:hover:bg-amber-500/10" type="button" @click="toggleContactBlock(activeChat)">{{ activeChatBlocked ? 'Unblock contact' : 'Block contact' }}</button>
+                  <button v-if="activeChat?.contact_id" class="w-full rounded-xl px-3 py-2 text-left text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10" type="button" @click="deleteContact(activeChat.contact_id)">Delete contact</button>
+                </div>
+              </div>
             </div>
 
             <div ref="messagesPanel" class="app-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto bg-violet-50/70 bg-[radial-gradient(circle_at_1px_1px,rgba(124,58,237,.12)_1px,transparent_0)] bg-[length:18px_18px] p-3 text-sm dark:bg-[#080b1a] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(139,92,246,.16)_1px,transparent_0)] sm:p-5">
               <div v-if="activeChat" class="sticky top-0 z-10 mx-auto mb-4 w-fit rounded-full bg-white/85 px-3 py-1 text-[11px] font-black text-violet-600 shadow-sm backdrop-blur dark:bg-[#161f35]/90 dark:text-violet-200">Today</div>
-              <div v-for="message in messageRows" :key="message.id ?? message.body" :class="[message.direction === 'outbound' ? 'ml-auto rounded-br-md bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-glow' : 'mr-auto rounded-bl-md bg-white text-slate-900 shadow-sm dark:bg-[#151d33] dark:text-slate-100', 'group max-w-[92%] rounded-2xl px-3 py-2 sm:max-w-[72%]']">
+              <div v-for="message in messageRows" :key="message.id ?? message.body" :class="[message.direction === 'outbound' ? 'ml-auto rounded-br-md bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-glow' : 'mr-auto rounded-bl-md bg-white text-slate-900 shadow-sm dark:bg-[#151d33] dark:text-slate-100', 'group relative max-w-[92%] rounded-2xl px-3 py-2 sm:max-w-[72%]']">
+                <button class="absolute -top-3 right-3 rounded-full bg-red-500 px-3 py-1 text-[10px] font-black text-white opacity-0 shadow-lg transition hover:bg-red-600 group-hover:opacity-100 focus:opacity-100" type="button" @click="deleteMessage(message.id)">Delete</button>
                 <a v-if="message.media_path && isImage(message.media_mime_type)" :href="message.media_path" target="_blank" class="mb-2 block overflow-hidden rounded-xl bg-black/10">
                   <img :src="message.media_path" class="max-h-72 w-full object-cover" alt="message attachment" />
                 </a>
@@ -230,7 +232,8 @@ Content-Type: application/json</pre>
                 <p>{{ message.body }}</p>
                 <div class="mt-1 flex flex-wrap items-center justify-end gap-2 text-[10px]">
                   <span class="text-slate-500 dark:text-slate-300">{{ shortTime(message.sent_at ?? message.created_at) }}</span>
-                  <button class="rounded-md bg-red-500/10 px-2 py-0.5 font-black text-red-500 opacity-0 transition hover:bg-red-500/15 group-hover:opacity-100 focus:opacity-100" type="button" @click="deleteMessage(message.id)">Delete</button>
+                  <button v-if="canEditMessage(message)" class="rounded-md bg-violet-500/10 px-2 py-0.5 font-black text-violet-500 opacity-0 transition hover:bg-violet-500/15 group-hover:opacity-100 focus:opacity-100" type="button" @click="startEditMessage(message)">Edit</button>
+                  <span v-if="isEditedMessage(message)" class="font-black text-slate-400 dark:text-slate-300">Edited</span>
                   <span class="font-black uppercase text-slate-400 dark:text-slate-300">{{ cleanStatus(message.status) }}</span>
                   <span :class="message.direction === 'outbound' ? messageStatusClass(message.status) : 'font-black text-slate-400 dark:text-slate-500'">{{ messageTickIcon(message.status) }}</span>
                 </div>
@@ -244,13 +247,19 @@ Content-Type: application/json</pre>
               </div>
             </div>
 
+            <div v-if="editingMessageId" class="shrink-0 border-t border-violet-100 bg-violet-100/80 px-4 py-2 text-sm font-bold text-violet-800 dark:border-white/10 dark:bg-violet-500/15 dark:text-violet-100">
+              <div class="flex items-center justify-between gap-3">
+                <span class="truncate">Editing message: {{ draft }}</span>
+                <button class="shrink-0 rounded-lg bg-white/70 px-3 py-1 text-xs font-black text-violet-700 dark:bg-white/10 dark:text-violet-100" type="button" @click="cancelEditMessage">Cancel</button>
+              </div>
+            </div>
             <div class="shrink-0 flex items-center gap-2 border-t border-violet-100 bg-violet-50 p-2 dark:border-white/10 dark:bg-[#161f35] sm:p-3">
               <label :class="['grid size-11 shrink-0 place-items-center rounded-full text-xl font-black text-violet-600 hover:bg-violet-100 dark:text-violet-200 dark:hover:bg-white/10 sm:size-12', activeChatBlocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer']">
                 +
                 <input class="hidden" type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" :disabled="activeChatBlocked" @change="selectAttachment" />
               </label>
-              <input v-model="draft" class="min-w-0 flex-1 rounded-full bg-white px-4 py-3 text-sm font-semibold outline-none ring-1 ring-violet-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/10 dark:ring-white/10 sm:px-5" :disabled="!activeChat || activeChatBlocked" :placeholder="activeChatBlocked ? 'Contact is blocked. Unblock to send a message.' : 'Type a message'" @keyup.enter="sendMessage" />
-              <button type="button" class="grid size-11 shrink-0 place-items-center rounded-full bg-violet-600 text-white shadow-glow disabled:opacity-50 sm:size-12" :disabled="!activeChat || sendingMessage || activeChatBlocked" @click.prevent="sendMessage"><Send class="size-5" /></button>
+              <input v-model="draft" class="min-w-0 flex-1 rounded-full bg-white px-4 py-3 text-sm font-semibold outline-none ring-1 ring-violet-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/10 dark:ring-white/10 sm:px-5" :disabled="!activeChat || activeChatBlocked" :placeholder="activeChatBlocked ? 'Contact is blocked. Unblock to send a message.' : editingMessageId ? 'Edit message' : 'Type a message'" @keyup.enter="submitComposer" />
+              <button type="button" class="grid size-11 shrink-0 place-items-center rounded-full bg-violet-600 text-white shadow-glow disabled:opacity-50 sm:size-12" :disabled="!activeChat || sendingMessage || activeChatBlocked" @click.prevent="submitComposer"><Send class="size-5" /></button>
             </div>
             <div v-if="selectedAttachmentName" class="shrink-0 border-t border-slate-200 px-4 py-2 text-xs font-bold text-slate-500 dark:border-white/10">
               Attached: {{ selectedAttachmentName }}
@@ -378,6 +387,19 @@ Content-Type: application/json</pre>
             <button class="w-full rounded-2xl bg-violet-600 px-5 py-3 text-sm font-black text-white shadow-glow disabled:opacity-60" :disabled="moduleForm.processing">{{ primaryAction }}</button>
           </div>
         </form>
+        <div v-if="screen === 'WhatsApp Accounts'" class="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div class="rounded-2xl bg-violet-50 p-4 text-sm dark:bg-violet-500/10">
+            <h2>Webhook Setup</h2>
+            <p class="mt-2 text-xs font-bold text-slate-500 dark:text-slate-400">Use this URL in Meta Webhooks for incoming messages and status updates.</p>
+            <div class="app-scrollbar mt-3 overflow-x-auto rounded-xl bg-white p-3 text-xs font-black text-slate-700 dark:bg-white/10 dark:text-slate-200">{{ activeWebhookUrl }}</div>
+            <p class="mt-3 text-xs text-slate-500">Verify token: use the same token you enter in the form.</p>
+          </div>
+          <div class="rounded-2xl bg-slate-50 p-4 text-sm dark:bg-white/8">
+            <p class="text-xs font-black uppercase text-slate-500">Connected Accounts</p>
+            <p class="mt-2 text-3xl font-black">{{ accountRows.length }}</p>
+            <p class="mt-1 text-xs font-bold text-slate-500">Latest data is loaded from the `whatsapp` database.</p>
+          </div>
+        </div>
       </section>
 
       <section v-if="screen !== 'Inbox / Live Chat'" class="dash-card overflow-hidden">
@@ -658,7 +680,7 @@ Content-Type: application/json</pre>
 
       <aside v-if="!isSuperAdmin" class="grid min-w-0 gap-4">
         <section class="dash-card min-w-0">
-          <div class="flex items-center justify-between gap-3"><h2>WhatsApp Accounts</h2><button class="shrink-0 rounded-xl bg-violet-100 px-3 py-2 text-xs font-black text-violet-700">+ Add New</button></div>
+          <div class="flex items-center justify-between gap-3"><h2>WhatsApp Accounts</h2><a href="/app/whatsapp-accounts" class="shrink-0 rounded-xl bg-violet-100 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-200 dark:bg-violet-500/15 dark:text-violet-200">+ Add New</a></div>
           <div class="mt-4 space-y-3">
             <div v-for="account in accountRows" :key="account.id ?? account.name" class="flex min-w-0 items-center gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-white/8">
               <div class="grid size-11 shrink-0 place-items-center rounded-full bg-whatsapp text-white"><Phone class="size-5" /></div>
@@ -692,12 +714,18 @@ Content-Type: application/json</pre>
             <button v-for="filter in dashboardInboxFilters" :key="filter.value" :class="['rounded-xl py-2 transition', dashboardInboxFilter === filter.value ? 'bg-white text-violet-600 shadow-sm dark:bg-violet-600 dark:text-white' : 'text-slate-500 hover:text-violet-600 dark:text-slate-300']" type="button" @click="dashboardInboxFilter = filter.value">{{ filter.label }}</button>
           </div>
           <div class="mt-4 grid min-h-[500px] overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 2xl:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]">
-            <div class="min-w-0 border-slate-200 bg-slate-50/60 p-2 dark:border-white/10 dark:bg-white/5 2xl:border-r">
-              <div v-for="chat in filteredDashboardChats" :key="chat.id ?? chat.name" class="mb-2 flex min-w-0 items-center gap-3 rounded-2xl bg-white p-3 shadow-sm dark:bg-white/8">
-                <div class="grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-amber-300 to-rose-500 text-white">{{ initial(chat.name) }}</div>
-                <div class="min-w-0"><p class="truncate text-sm font-black">{{ chat.name }}</p><p class="truncate text-xs text-slate-500">{{ chat.phone_number }}</p><p v-if="isBlocked(chat)" class="text-[10px] font-black uppercase text-red-500">Blocked</p></div>
-                <span class="ml-auto shrink-0 text-[11px] text-slate-400">{{ relativeTime(chat.last_message_at) }}</span>
-              </div>
+            <div class="app-scrollbar min-w-0 overflow-y-auto border-slate-200 bg-slate-50/60 p-2 dark:border-white/10 dark:bg-white/5 2xl:border-r">
+              <button v-for="chat in filteredDashboardChats" :key="chat.id ?? chat.name" type="button" :class="['mb-2 flex w-full min-w-0 items-center gap-3 rounded-2xl p-3 text-left shadow-sm transition', activeChat?.id === chat.id ? 'bg-violet-600 text-white shadow-glow' : 'bg-white hover:bg-violet-50 dark:bg-white/8 dark:hover:bg-white/12']" @click="openConversation(chat)">
+                <div class="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-amber-300 to-rose-500 text-white">
+                  <img v-if="chat.avatar" :src="chat.avatar" class="size-full object-cover" alt="contact" />
+                  <span v-else>{{ initial(chat.name) }}</span>
+                </div>
+                <div class="min-w-0"><p class="truncate text-sm font-black">{{ chat.name }}</p><p :class="['truncate text-xs', activeChat?.id === chat.id ? 'text-white/70' : 'text-slate-500']">{{ chat.phone_number }}</p><p v-if="isBlocked(chat)" :class="['text-[10px] font-black uppercase', activeChat?.id === chat.id ? 'text-red-100' : 'text-red-500']">Blocked</p></div>
+                <div class="ml-auto grid shrink-0 justify-items-end gap-1">
+                  <span :class="['text-[11px]', activeChat?.id === chat.id ? 'text-white/70' : 'text-slate-400']">{{ relativeTime(chat.last_message_at) }}</span>
+                  <span v-if="chat.unread_count" class="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-black text-white">{{ chat.unread_count }}</span>
+                </div>
+              </button>
               <div v-if="!filteredDashboardChats.length" class="grid min-h-40 place-items-center rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-center dark:border-white/10 dark:bg-white/[.04]">
                 <div>
                   <MessageSquare class="mx-auto size-8 text-slate-400" />
@@ -708,16 +736,37 @@ Content-Type: application/json</pre>
             </div>
             <div class="hidden min-w-0 flex-col bg-white dark:bg-[#10182b] 2xl:flex">
               <div class="flex items-center gap-3 border-b border-slate-200 p-3 dark:border-white/10">
-                <div class="grid size-10 place-items-center rounded-full bg-gradient-to-br from-amber-300 to-rose-500 text-white">{{ initial(activeChat?.name ?? 'E') }}</div>
+                <div class="grid size-10 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-amber-300 to-rose-500 text-white">
+                  <img v-if="activeChat?.avatar" :src="activeChat.avatar" class="size-full object-cover" alt="contact" />
+                  <span v-else>{{ initial(activeChat?.name ?? 'E') }}</span>
+                </div>
                 <div class="min-w-0"><p class="truncate text-sm font-black">{{ activeChat?.name ?? 'Emily Johnson' }}</p><p class="truncate text-xs text-slate-500">{{ activeChat?.phone_number ?? '+1 (556) 123-4567' }}</p></div>
               </div>
-              <div class="flex-1 space-y-3 p-4 text-sm">
-              <div v-for="message in messageRows" :key="message.id ?? message.body" :class="[message.direction === 'outbound' ? 'ml-auto bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white' : 'bg-slate-100 dark:bg-white/10', 'max-w-[86%] rounded-2xl p-3']">
+              <div class="app-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto bg-violet-50/60 p-4 text-sm dark:bg-[#080b1a]">
+              <div v-if="activeChat" class="mx-auto w-fit rounded-full bg-white/85 px-3 py-1 text-[10px] font-black text-violet-600 shadow-sm dark:bg-white/10 dark:text-violet-200">Full chat with {{ activeChat.name }}</div>
+              <div v-for="message in messageRows" :key="message.id ?? message.body" :class="[message.direction === 'outbound' ? 'ml-auto bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white' : 'mr-auto bg-white text-slate-900 shadow-sm dark:bg-[#151d33] dark:text-slate-100', 'group relative max-w-[86%] rounded-2xl p-3']">
+                <button class="absolute -top-3 right-3 rounded-full bg-red-500 px-3 py-1 text-[10px] font-black text-white opacity-0 shadow-lg transition hover:bg-red-600 group-hover:opacity-100 focus:opacity-100" type="button" @click="deleteMessage(message.id)">Delete</button>
+                <a v-if="message.media_path && isImage(message.media_mime_type)" :href="message.media_path" target="_blank" class="mb-2 block overflow-hidden rounded-xl bg-black/10">
+                  <img :src="message.media_path" class="max-h-48 w-full object-cover" alt="message attachment" />
+                </a>
+                <a v-else-if="message.media_path" :href="message.media_path" target="_blank" class="mb-2 flex items-center gap-2 rounded-xl bg-white/15 px-3 py-2 text-xs font-black">
+                  <span>Document</span>
+                  <span class="truncate">{{ mediaName(message) }}</span>
+                </a>
                 <p>{{ message.body }}</p>
                 <div class="mt-2 flex flex-wrap items-center justify-end gap-2 text-[10px]">
-                  <span :class="message.direction === 'outbound' ? 'text-white/70' : 'text-slate-500 dark:text-slate-400'">{{ dateTime(message.sent_at ?? message.created_at) }}</span>
+                  <span :class="message.direction === 'outbound' ? 'text-white/70' : 'text-slate-500 dark:text-slate-400'">{{ shortTime(message.sent_at ?? message.created_at) }}</span>
+                  <button v-if="canEditMessage(message)" class="rounded-md bg-violet-500/10 px-2 py-0.5 font-black text-violet-500 opacity-0 transition hover:bg-violet-500/15 group-hover:opacity-100 focus:opacity-100" type="button" @click="startEditMessage(message)">Edit</button>
+                  <span v-if="isEditedMessage(message)" class="font-black text-slate-400 dark:text-slate-300">Edited</span>
                   <span class="font-black uppercase">{{ cleanStatus(message.status) }}</span>
                   <span :class="message.direction === 'outbound' ? messageStatusClass(message.status) : 'font-black text-slate-400 dark:text-slate-500'">{{ messageTickIcon(message.status) }}</span>
+                </div>
+              </div>
+              <div v-if="activeChat && !messageRows.length" class="grid min-h-64 place-items-center text-center">
+                <div>
+                  <MessageSquare class="mx-auto size-10 text-slate-400" />
+                  <p class="mt-3 text-sm font-black text-slate-700 dark:text-slate-200">No messages yet</p>
+                  <p class="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Type below to start this conversation.</p>
                 </div>
               </div>
               <div v-if="!filteredDashboardChats.length" class="grid min-h-64 place-items-center text-center">
@@ -728,9 +777,15 @@ Content-Type: application/json</pre>
                 </div>
               </div>
               </div>
+              <div v-if="editingMessageId" class="border-t border-violet-100 bg-violet-100/80 px-4 py-2 text-xs font-bold text-violet-800 dark:border-white/10 dark:bg-violet-500/15 dark:text-violet-100">
+                <div class="flex items-center justify-between gap-3">
+                  <span class="truncate">Editing: {{ draft }}</span>
+                  <button class="shrink-0 rounded-lg bg-white/70 px-2 py-1 text-[10px] font-black text-violet-700 dark:bg-white/10 dark:text-violet-100" type="button" @click="cancelEditMessage">Cancel</button>
+                </div>
+              </div>
               <div class="flex gap-2 border-t border-slate-200 p-3 dark:border-white/10">
-                <input v-model="draft" class="min-w-0 flex-1 rounded-xl bg-slate-100 px-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/10" :disabled="activeChatBlocked" :placeholder="activeChatBlocked ? 'Contact is blocked.' : 'Type a message...'" @keyup.enter="sendMessage" />
-                <button class="grid size-11 shrink-0 place-items-center rounded-xl bg-violet-600 text-white disabled:opacity-60" :disabled="messageForm.processing || activeChatBlocked" @click="sendMessage"><Send class="size-5" /></button>
+                <input v-model="draft" class="min-w-0 flex-1 rounded-xl bg-slate-100 px-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/10" :disabled="activeChatBlocked" :placeholder="activeChatBlocked ? 'Contact is blocked.' : editingMessageId ? 'Edit message' : 'Type a message...'" @keyup.enter="submitComposer" />
+                <button class="grid size-11 shrink-0 place-items-center rounded-xl bg-violet-600 text-white disabled:opacity-60" :disabled="messageForm.processing || activeChatBlocked" @click="submitComposer"><Send class="size-5" /></button>
               </div>
             </div>
           </div>
@@ -768,7 +823,10 @@ Content-Type: application/json</pre>
         <div class="bg-gradient-to-br from-violet-700 via-violet-600 to-fuchsia-600 p-5 text-white sm:p-6">
           <div class="flex items-start justify-between gap-4">
             <div class="flex min-w-0 items-center gap-4">
-              <div class="grid size-16 shrink-0 place-items-center rounded-3xl bg-white/15 text-2xl font-black ring-1 ring-white/20">{{ initial(contactProfileForm.name || 'C') }}</div>
+              <div class="grid size-16 shrink-0 place-items-center overflow-hidden rounded-3xl bg-white/15 text-2xl font-black ring-1 ring-white/20">
+                <img v-if="contactProfileAvatar" :src="contactProfileAvatar" class="size-full object-cover" alt="contact profile" />
+                <span v-else>{{ initial(contactProfileForm.name || 'C') }}</span>
+              </div>
               <div class="min-w-0">
                 <p class="text-xs font-black uppercase text-white/70">Contact Profile</p>
                 <h2 class="mt-1 truncate text-2xl font-black">{{ contactProfileForm.name || 'Contact' }}</h2>
@@ -780,6 +838,20 @@ Content-Type: application/json</pre>
         </div>
 
         <form class="grid gap-4 p-5 sm:grid-cols-2 sm:p-6" @submit.prevent="saveContactProfile">
+          <label class="grid gap-2 rounded-2xl border border-dashed border-violet-200 bg-violet-50 p-4 text-sm font-bold dark:border-white/10 dark:bg-violet-500/10 sm:col-span-2">
+            <span>Profile Picture <span class="text-xs text-slate-400">(optional)</span></span>
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div class="grid size-16 shrink-0 place-items-center overflow-hidden rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-xl font-black text-white">
+                <img v-if="contactProfileAvatar" :src="contactProfileAvatar" class="size-full object-cover" alt="contact profile preview" />
+                <span v-else>{{ initial(contactProfileForm.name || 'C') }}</span>
+              </div>
+              <div class="min-w-0 flex-1">
+                <input type="file" accept="image/*" class="form-control" @change="selectAvatar" />
+                <p class="mt-2 truncate text-xs text-slate-500 dark:text-slate-400">{{ selectedAvatarName || 'No picture selected. You can leave this empty.' }}</p>
+                <span v-if="contactProfileForm.errors.avatar" class="text-xs text-red-500">{{ contactProfileForm.errors.avatar }}</span>
+              </div>
+            </div>
+          </label>
           <label class="grid gap-2 text-sm font-bold">
             <span>Name</span>
             <input v-model="contactProfileForm.name" class="form-control" placeholder="Customer name" />
@@ -844,6 +916,8 @@ const recordsSearch = ref('');
 const platformSearch = ref('');
 const selectedAttachmentName = ref('');
 const selectedAttachmentFile = ref<File | null>(null);
+const selectedAvatarName = ref('');
+const selectedAvatarPreview = ref('');
 const sendingMessage = ref(false);
 const messagesPanel = ref<HTMLElement | null>(null);
 const chatSearch = ref('');
@@ -852,6 +926,10 @@ const isPollingLiveData = ref(false);
 const viewRecord = ref<Row | null>(null);
 const contactProfileOpen = ref(false);
 const activeProfileContactId = ref<number | string | null>(null);
+const editingMessageId = ref<number | string | null>(null);
+const editingMessageBody = ref('');
+const chatMenuId = ref<number | string | null>(null);
+const activeChatMenuOpen = ref(false);
 let liveDataPoller: ReturnType<typeof window.setInterval> | null = null;
 const moduleForm = useForm<Record<string, any>>({
   name: '',
@@ -889,12 +967,13 @@ const contactProfileForm = useForm<Record<string, any>>({
   email: '',
   status: 'new_lead',
   deal_value: 0,
+  avatar: null,
 });
 
 const userName = computed(() => page.props.auth?.user?.name ?? 'John');
 const isSuperAdmin = computed(() => Boolean(props.isSuperAdmin));
 const isDashboard = computed(() => ['Dashboard Overview', 'Dashboard'].includes(props.screen));
-const shouldPollLiveData = computed(() => ['Dashboard Overview', 'Dashboard', 'Inbox / Live Chat', 'Contacts CRM'].includes(props.screen));
+const shouldPollLiveData = computed(() => ['Dashboard Overview', 'Dashboard', 'Inbox / Live Chat', 'Contacts CRM', 'WhatsApp Accounts'].includes(props.screen));
 const pageTitle = computed(() => props.screen.replace(' / Live Chat', ''));
 const pageSubtitle = computed(() => pageCopy[props.screen] ?? 'Manage this workspace module with responsive tools, filters, records and team-ready workflows.');
 const primaryAction = computed(() => actionCopy[props.screen] ?? 'Create New');
@@ -1003,6 +1082,12 @@ const billingPlans = computed(() => props.module?.paymentPlans ?? fallbackPlans)
 const invoiceRows = computed(() => props.module?.invoices ?? []);
 const currentSubscription = computed(() => props.dashboard?.currentSubscription ?? props.module?.subscriptions?.[0] ?? null);
 const activeChatBlocked = computed(() => isBlocked(activeChat.value));
+const activeProfileContact = computed(() => {
+  const contactId = activeProfileContactId.value;
+  if (!contactId) return null;
+  return [...chatRows.value, ...crmContacts.value].find((contact: Row) => (contact.contact_id ?? contact.id) === contactId) ?? null;
+});
+const contactProfileAvatar = computed(() => selectedAvatarPreview.value || activeProfileContact.value?.avatar || '');
 const paymentGatewayLabel = computed(() => (props.module?.paymentGateway === 'stripe' ? 'Stripe secure checkout' : 'Demo checkout for local testing'));
 const phonePlaceholder = computed(() => `${moduleForm.country_code || '+92'} 300 0000000`);
 const firstAccount = computed(() => (props.module?.accounts?.[0] ?? props.dashboard?.accounts?.[0] ?? null));
@@ -1353,6 +1438,7 @@ const profileFields = computed(() => [
 const securityItems = ['Two-factor authentication', 'Active devices', 'Password update'];
 const pageCopy: Row = {
   'Inbox / Live Chat': 'Handle realtime WhatsApp conversations, assignments, notes, unread messages and AI-assisted replies.',
+  'WhatsApp Accounts': 'Connect Meta WhatsApp Cloud API accounts, manage webhook setup, tokens and account status.',
   'Contacts CRM': 'Manage customers, leads, deal values, tags, owner assignment and follow-up activity.',
   'Broadcast Campaigns': 'Create segmented WhatsApp campaigns with scheduling, delivery tracking and retries.',
   'AI Automations': 'Build trigger-based workflows for replies, assignments, tags, delays and lead capture.',
@@ -1369,6 +1455,7 @@ const pageCopy: Row = {
 };
 const actionCopy: Row = {
   'Inbox / Live Chat': 'New Message',
+  'WhatsApp Accounts': 'Connect WhatsApp',
   'Contacts CRM': 'Add Contact',
   'Broadcast Campaigns': 'Create Campaign',
   'AI Automations': 'Create Automation',
@@ -1455,7 +1542,7 @@ const formConfig: Row = {
     ],
     defaults: { workspace_name: props.workspace?.name ?? 'ChatFlow AI Demo', timezone: props.workspace?.timezone ?? 'Asia/Karachi' },
   },
-  'Inbox / Live Chat': {
+  'WhatsApp Accounts': {
     route: '/app/whatsapp-accounts',
     fields: [
       { name: 'name', label: 'WhatsApp Account', placeholder: 'Main Business' },
@@ -1493,14 +1580,14 @@ function optionLabel(option: Row | string) {
 
 function relativeTime(value?: string) {
   if (!value) return 'now';
-  const diff = Math.max(1, Math.round((Date.now() - new Date(value).getTime()) / 60000));
+  const diff = Math.max(1, Math.round((Date.now() - parseAppDate(value).getTime()) / 60000));
   if (diff < 60) return `${diff} min ago`;
   return `${Math.round(diff / 60)} hr ago`;
 }
 
 function dateTime(value?: string) {
   if (!value) return 'Not set';
-  return new Date(value).toLocaleString([], {
+  return parseAppDate(value).toLocaleString([], {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -1511,7 +1598,13 @@ function dateTime(value?: string) {
 
 function shortTime(value?: string) {
   if (!value) return '';
-  return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return parseAppDate(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function parseAppDate(value: string) {
+  const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(value);
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+  return new Date(hasTimezone ? normalized : `${normalized}Z`);
 }
 
 function money(value: number | string) {
@@ -1547,6 +1640,10 @@ function toggleContactBlock(contact: Row) {
     preserveScroll: true,
     preserveState: true,
     only: ['dashboard', 'module'],
+    onFinish: () => {
+      chatMenuId.value = null;
+      activeChatMenuOpen.value = false;
+    },
   });
 }
 
@@ -1581,6 +1678,13 @@ function selectAttachment(event: Event) {
   selectedAttachmentName.value = file?.name ?? '';
 }
 
+function selectAvatar(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0] ?? null;
+  contactProfileForm.avatar = file;
+  selectedAvatarName.value = file?.name ?? '';
+  selectedAvatarPreview.value = file ? URL.createObjectURL(file) : '';
+}
+
 function clearAttachment() {
   selectedAttachmentFile.value = null;
   messageForm.attachment = null;
@@ -1589,9 +1693,16 @@ function clearAttachment() {
 
 function openConversation(chat: Row) {
   selectedConversationId.value = chat.id;
+  activeChatMenuOpen.value = false;
+  chatMenuId.value = null;
   if (chat.unread_count) {
     router.post(`/app/conversations/${chat.id}/read`, {}, { preserveScroll: true, preserveState: true });
   }
+}
+
+function toggleChatMenu(conversationId: number | string) {
+  activeChatMenuOpen.value = false;
+  chatMenuId.value = chatMenuId.value === conversationId ? null : conversationId;
 }
 
 function openContactProfile(contact?: Row | null) {
@@ -1606,12 +1717,18 @@ function openContactProfile(contact?: Row | null) {
   contactProfileForm.email = contact.email ?? '';
   contactProfileForm.status = contact.contact_status ?? contact.status ?? 'new_lead';
   contactProfileForm.deal_value = contact.deal_value ?? contact.value ?? 0;
+  contactProfileForm.avatar = null;
+  selectedAvatarName.value = '';
+  selectedAvatarPreview.value = '';
   contactProfileOpen.value = true;
 }
 
 function closeContactProfile() {
   contactProfileOpen.value = false;
   activeProfileContactId.value = null;
+  contactProfileForm.avatar = null;
+  selectedAvatarName.value = '';
+  selectedAvatarPreview.value = '';
   contactProfileForm.clearErrors();
 }
 
@@ -1620,6 +1737,7 @@ function saveContactProfile() {
   contactProfileForm.post(`/app/contacts/${activeProfileContactId.value}/update`, {
     preserveScroll: true,
     preserveState: true,
+    forceFormData: true,
     only: ['dashboard', 'module', 'flash', 'errors'],
     onSuccess: () => closeContactProfile(),
   });
@@ -1634,6 +1752,15 @@ function detectCountryCode(phone?: string) {
     .find((code: string) => compact.startsWith(code));
 
   return match ?? '+92';
+}
+
+function submitComposer() {
+  if (editingMessageId.value) {
+    saveEditedMessage();
+    return;
+  }
+
+  sendMessage();
 }
 
 function sendMessage() {
@@ -1674,9 +1801,70 @@ function deleteChat(conversationId: number | string) {
   });
 }
 
+function clearChat(conversationId: number | string) {
+  if (!conversationId || !confirm('Clear all messages in this chat?')) return;
+  router.post(`/app/conversations/${conversationId}/clear`, {}, {
+    preserveScroll: true,
+    preserveState: true,
+    only: ['dashboard', 'module', 'flash'],
+    onSuccess: () => {
+      chatMenuId.value = null;
+      activeChatMenuOpen.value = false;
+    },
+  });
+}
+
 function deleteMessage(messageId: number | string) {
   if (!messageId || !confirm('Delete this message?')) return;
   router.delete(`/app/messages/${messageId}`, { preserveScroll: true });
+}
+
+function canEditMessage(message: Row) {
+  if (!message?.id || message.direction !== 'outbound') return false;
+  const createdAt = message.created_at || message.sent_at ? parseAppDate(message.created_at ?? message.sent_at).getTime() : Date.now();
+  return Date.now() - createdAt <= 5 * 60 * 1000;
+}
+
+function isEditedMessage(message: Row) {
+  try {
+    return Boolean(JSON.parse(message.metadata ?? '{}')?.edited);
+  } catch {
+    return false;
+  }
+}
+
+function startEditMessage(message: Row) {
+  if (!canEditMessage(message)) {
+    alert('Edit time expired. You can edit your sent messages within 5 minutes only.');
+    return;
+  }
+  editingMessageId.value = message.id;
+  editingMessageBody.value = message.body ?? '';
+  draft.value = message.body ?? '';
+  clearAttachment();
+}
+
+function cancelEditMessage() {
+  editingMessageId.value = null;
+  editingMessageBody.value = '';
+  draft.value = '';
+}
+
+function saveEditedMessage() {
+  if (!editingMessageId.value || !draft.value.trim()) return;
+  router.post(`/app/messages/${editingMessageId.value}/edit`, { body: draft.value.trim() }, {
+    preserveScroll: true,
+    preserveState: true,
+    onSuccess: () => {
+      cancelEditMessage();
+      router.reload({
+        only: ['dashboard', 'module', 'flash'],
+        preserveScroll: true,
+        preserveState: true,
+        replace: true,
+      });
+    },
+  });
 }
 
 function deleteContact(contactId: number | string) {
@@ -1819,14 +2007,23 @@ function refreshLiveData() {
   });
 }
 
+function handleDashboardOutsideClick(event: MouseEvent) {
+  const target = event.target as HTMLElement;
+  if (target.closest('[data-chat-menu-root]')) return;
+  chatMenuId.value = null;
+  activeChatMenuOpen.value = false;
+}
+
 onMounted(() => {
-  if (!shouldPollLiveData.value) return;
-  liveDataPoller = window.setInterval(refreshLiveData, 3500);
+  window.addEventListener('mousedown', handleDashboardOutsideClick);
+  if (shouldPollLiveData.value) {
+    liveDataPoller = window.setInterval(refreshLiveData, 3500);
+  }
 });
 
 onUnmounted(() => {
-  if (!liveDataPoller) return;
-  window.clearInterval(liveDataPoller);
+  window.removeEventListener('mousedown', handleDashboardOutsideClick);
+  if (liveDataPoller) window.clearInterval(liveDataPoller);
   liveDataPoller = null;
 });
 
@@ -1843,6 +2040,7 @@ function recordsForScreen() {
     'API Keys': data.apiKeys ?? [],
     'Activity Logs': data.activity ?? [],
     'Inbox / Live Chat': data.accounts ?? [],
+    'WhatsApp Accounts': data.accounts ?? [],
     Settings: [props.workspace].filter(Boolean),
     Profile: [page.props.auth?.user].filter(Boolean),
   };

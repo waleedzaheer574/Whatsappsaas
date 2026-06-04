@@ -269,6 +269,42 @@ class DashboardActionController extends Controller
         return back()->with('success', 'Message deleted successfully.');
     }
 
+    public function editMessage(Request $request, int $message): RedirectResponse
+    {
+        $data = $request->validate([
+            'body' => ['required', 'string', 'max:2000'],
+        ]);
+        $workspaceId = $this->workspaceId($request);
+        $record = DB::table('messages')
+            ->join('conversations', 'conversations.id', '=', 'messages.conversation_id')
+            ->where('messages.id', $message)
+            ->where('conversations.workspace_id', $workspaceId)
+            ->select('messages.id', 'messages.direction', 'messages.created_at', 'messages.metadata')
+            ->first();
+
+        abort_unless($record, 404);
+
+        if ($record->direction !== 'outbound') {
+            return back()->with('error', 'Only your sent messages can be edited.');
+        }
+
+        if (\Illuminate\Support\Carbon::parse($record->created_at)->lt(now()->subMinutes(5))) {
+            return back()->with('error', 'Message edit time expired. You can edit messages within 5 minutes only.');
+        }
+
+        $metadata = json_decode($record->metadata ?? '{}', true) ?: [];
+        $metadata['edited'] = true;
+        $metadata['edited_at'] = now()->toIso8601String();
+
+        DB::table('messages')->where('id', $message)->update([
+            'body' => $data['body'],
+            'metadata' => json_encode($metadata),
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'Message edited successfully.');
+    }
+
     public function syncMessageStatuses(Request $request): RedirectResponse
     {
         $workspaceId = $this->workspaceId($request);
@@ -306,6 +342,41 @@ class DashboardActionController extends Controller
         return back()->with('success', 'Chat deleted successfully.');
     }
 
+    public function clearConversation(Request $request, int $conversation): RedirectResponse
+    {
+        $workspaceId = $this->workspaceId($request);
+        $exists = DB::table('conversations')
+            ->where('id', $conversation)
+            ->where('workspace_id', $workspaceId)
+            ->exists();
+
+        abort_unless($exists, 404);
+
+        $mediaRows = DB::table('message_media')
+            ->join('messages', 'messages.id', '=', 'message_media.message_id')
+            ->where('messages.conversation_id', $conversation)
+            ->select('message_media.path')
+            ->get();
+
+        foreach ($mediaRows as $media) {
+            if ($media->path && str_starts_with($media->path, '/uploads/messages/')) {
+                $filePath = public_path(ltrim($media->path, '/'));
+                if (File::exists($filePath)) {
+                    File::delete($filePath);
+                }
+            }
+        }
+
+        DB::table('messages')->where('conversation_id', $conversation)->delete();
+        DB::table('conversations')->where('id', $conversation)->update([
+            'unread_count' => 0,
+            'last_message_at' => null,
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'Chat cleared successfully.');
+    }
+
     public function deleteContact(Request $request, int $contact): RedirectResponse
     {
         DB::table('contacts')
@@ -326,9 +397,10 @@ class DashboardActionController extends Controller
             'email' => ['nullable', 'email'],
             'status' => ['required', 'in:new_lead,interested,follow_up,won,lost,blocked'],
             'deal_value' => ['nullable', 'numeric', 'min:0'],
+            'avatar' => ['nullable', 'image', 'max:4096'],
         ]);
         $countryCode = $data['country_code'] ?? '+92';
-        unset($data['country_code']);
+        unset($data['country_code'], $data['avatar']);
         if (! str_starts_with(trim($data['phone_number']), '+')) {
             $data['phone_number'] = $countryCode.' '.trim($data['phone_number']);
         }
@@ -348,8 +420,21 @@ class DashboardActionController extends Controller
             return back()->withErrors(['phone_number' => 'This phone number already exists in your CRM.']);
         }
 
+        $avatarPath = null;
+        if ($request->hasFile('avatar')) {
+            $directory = public_path('uploads/contacts');
+            if (! File::exists($directory)) {
+                File::makeDirectory($directory, 0755, true);
+            }
+            $file = $request->file('avatar');
+            $filename = Str::uuid().'.'.strtolower($file->getClientOriginalExtension() ?: 'jpg');
+            $file->move($directory, $filename);
+            $avatarPath = '/uploads/contacts/'.$filename;
+        }
+
         DB::table('contacts')->where('id', $contact)->where('workspace_id', $workspaceId)->update([
             ...$data,
+            ...($avatarPath ? ['avatar' => $avatarPath] : []),
             'updated_at' => now(),
         ]);
         DB::table('leads')->where('contact_id', $contact)->where('workspace_id', $workspaceId)->update([

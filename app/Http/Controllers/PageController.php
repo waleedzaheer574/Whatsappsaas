@@ -237,6 +237,7 @@ class PageController extends Controller
                         'contacts.name',
                         'contacts.phone_number',
                         'contacts.email',
+                        'contacts.avatar',
                         'contacts.deal_value',
                         'contacts.source',
                         'contacts.owner_name',
