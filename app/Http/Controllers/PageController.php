@@ -232,7 +232,18 @@ class PageController extends Controller
                 'conversations' => DB::table('conversations')
                     ->join('contacts', 'contacts.id', '=', 'conversations.contact_id')
                     ->where('conversations.workspace_id', $workspaceId)
-                    ->select('conversations.*', 'contacts.name', 'contacts.phone_number', 'contacts.status as contact_status')
+                    ->select(
+                        'conversations.*',
+                        'contacts.name',
+                        'contacts.phone_number',
+                        'contacts.email',
+                        'contacts.deal_value',
+                        'contacts.source',
+                        'contacts.owner_name',
+                        'contacts.status as contact_status',
+                        'contacts.created_at as contact_created_at',
+                        'contacts.updated_at as contact_updated_at',
+                    )
                     ->latest('conversations.last_message_at')
                     ->limit(6)
                     ->get(),

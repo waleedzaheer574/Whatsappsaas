@@ -316,6 +316,55 @@ class DashboardActionController extends Controller
         return back()->with('success', 'Contact and related chat deleted successfully.');
     }
 
+    public function updateContact(Request $request, int $contact): RedirectResponse
+    {
+        $workspaceId = $this->workspaceId($request);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'country_code' => ['nullable', 'string', 'max:8'],
+            'phone_number' => ['required', 'string', 'max:40'],
+            'email' => ['nullable', 'email'],
+            'status' => ['required', 'in:new_lead,interested,follow_up,won,lost,blocked'],
+            'deal_value' => ['nullable', 'numeric', 'min:0'],
+        ]);
+        $countryCode = $data['country_code'] ?? '+92';
+        unset($data['country_code']);
+        if (! str_starts_with(trim($data['phone_number']), '+')) {
+            $data['phone_number'] = $countryCode.' '.trim($data['phone_number']);
+        }
+
+        $exists = DB::table('contacts')
+            ->where('id', $contact)
+            ->where('workspace_id', $workspaceId)
+            ->exists();
+        abort_unless($exists, 404);
+
+        $duplicate = DB::table('contacts')
+            ->where('workspace_id', $workspaceId)
+            ->where('phone_number', $data['phone_number'])
+            ->where('id', '!=', $contact)
+            ->exists();
+        if ($duplicate) {
+            return back()->withErrors(['phone_number' => 'This phone number already exists in your CRM.']);
+        }
+
+        DB::table('contacts')->where('id', $contact)->where('workspace_id', $workspaceId)->update([
+            ...$data,
+            'updated_at' => now(),
+        ]);
+        DB::table('leads')->where('contact_id', $contact)->where('workspace_id', $workspaceId)->update([
+            'stage' => $data['status'],
+            'value' => $data['deal_value'] ?? 0,
+            'updated_at' => now(),
+        ]);
+        DB::table('conversations')->where('contact_id', $contact)->where('workspace_id', $workspaceId)->update([
+            'status' => $data['status'] === 'blocked' ? 'blocked' : 'open',
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'Contact profile updated successfully.');
+    }
+
     public function blockContact(Request $request, int $contact): RedirectResponse
     {
         $workspaceId = $this->workspaceId($request);

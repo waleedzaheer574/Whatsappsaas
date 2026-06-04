@@ -54,6 +54,7 @@ Route::prefix('app')->middleware('auth')->name('dashboard.')->group(function () 
         Route::get('/api-keys', [PageController::class, 'dashboard'])->defaults('screen', 'API Keys')->name('apiKeys');
         Route::get('/activity', [PageController::class, 'dashboard'])->defaults('screen', 'Activity Logs')->name('activity');
         Route::post('/contacts', [DashboardActionController::class, 'contact'])->name('contacts.store');
+        Route::post('/contacts/{contact}/update', [DashboardActionController::class, 'updateContact'])->name('contacts.update');
         Route::post('/contacts/{contact}/stage', [DashboardActionController::class, 'contactStage'])->name('contacts.stage');
         Route::post('/contacts/{contact}/block', [DashboardActionController::class, 'blockContact'])->name('contacts.block');
         Route::post('/contacts/{contact}/notes', [DashboardActionController::class, 'contactNote'])->name('contacts.notes');
