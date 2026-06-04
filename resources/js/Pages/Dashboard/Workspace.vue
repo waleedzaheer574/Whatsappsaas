@@ -680,16 +680,31 @@ Content-Type: application/json</pre>
 
       <aside v-if="!isSuperAdmin" class="grid min-w-0 gap-4">
         <section class="dash-card min-w-0">
-          <div class="flex items-center justify-between gap-3"><h2>WhatsApp Accounts</h2><a href="/app/whatsapp-accounts" class="shrink-0 rounded-xl bg-violet-100 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-200 dark:bg-violet-500/15 dark:text-violet-200">+ Add New</a></div>
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h2>WhatsApp Accounts</h2>
+              <p class="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">{{ accountRows.length }} connected records</p>
+            </div>
+            <a href="/app/whatsapp-accounts" class="shrink-0 rounded-xl bg-violet-600 px-3 py-2 text-xs font-black text-white shadow-glow transition hover:bg-violet-500 dark:bg-violet-500 dark:text-white dark:hover:bg-violet-400">+ Add WhatsApp</a>
+          </div>
           <div class="mt-4 space-y-3">
             <div v-for="account in accountRows" :key="account.id ?? account.name" class="flex min-w-0 items-center gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-white/8">
               <div class="grid size-11 shrink-0 place-items-center rounded-full bg-whatsapp text-white"><Phone class="size-5" /></div>
               <div class="min-w-0">
                 <p class="truncate text-sm font-black">{{ account.name }}</p>
-                <p class="truncate text-xs text-slate-500">{{ account.phone_number }}</p>
+                <p class="truncate text-xs text-slate-500 dark:text-slate-400">{{ account.phone_number || 'Phone number not set' }}</p>
+                <p v-if="account.phone_number_id" class="truncate text-[10px] font-bold text-slate-400 dark:text-slate-500">ID: {{ account.phone_number_id }}</p>
                 <p class="text-xs font-black text-emerald-500">{{ cleanStatus(account.status) }}</p>
               </div>
-              <span class="ml-auto rounded-full bg-emerald-500 px-2 py-0.5 text-xs font-black text-white">{{ account.id ?? 1 }}</span>
+              <div class="ml-auto grid shrink-0 justify-items-end gap-1">
+                <span class="rounded-full bg-emerald-500 px-2 py-0.5 text-xs font-black text-white">{{ cleanStatus(account.status) }}</span>
+                <span class="text-[10px] font-bold text-slate-400">{{ relativeTime(account.created_at) }}</span>
+              </div>
+            </div>
+            <div v-if="!accountRows.length" class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center dark:border-white/10 dark:bg-white/[.04]">
+              <Phone class="mx-auto size-8 text-slate-400" />
+              <p class="mt-3 text-sm font-black text-slate-800 dark:text-slate-100">Record not found</p>
+              <p class="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">No WhatsApp account is connected yet. Click Add WhatsApp to connect Meta Cloud API details.</p>
             </div>
           </div>
         </section>
@@ -1035,7 +1050,7 @@ const filteredPlatformWorkspaces = computed(() => {
   return platformWorkspaces.value.filter((workspace: Row) => JSON.stringify(workspace).toLowerCase().includes(query));
 });
 const totalMessages = computed(() => statCards.value[0]?.value ?? '12,458');
-const accountRows = computed(() => props.dashboard?.accounts ?? fallbackAccounts);
+const accountRows = computed(() => props.dashboard?.accounts ?? []);
 const leadRows = computed(() => props.dashboard?.leads ?? fallbackLeads);
 const activityRows = computed(() => props.dashboard?.activities ?? fallbackActivities);
 const chatRows = computed(() => props.dashboard?.conversations ?? fallbackChats);
