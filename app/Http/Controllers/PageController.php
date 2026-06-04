@@ -78,6 +78,15 @@ class PageController extends Controller
                 ->select('workspaces.*'))
             ->first();
         $workspaceId = $workspace->id ?? 1;
+        $chartPeriod = in_array($request->query('chart_period'), ['week', 'month', 'quarter'], true)
+            ? $request->query('chart_period')
+            : 'week';
+        $chartDays = match ($chartPeriod) {
+            'month' => 30,
+            'quarter' => 90,
+            default => 7,
+        };
+        $chartStart = now()->subDays($chartDays - 1)->startOfDay();
         $totalMessages = DB::table('messages')->join('conversations', 'conversations.id', '=', 'messages.conversation_id')->where('conversations.workspace_id', $workspaceId)->count();
         $aiReplies = DB::table('messages')->join('conversations', 'conversations.id', '=', 'messages.conversation_id')->where('conversations.workspace_id', $workspaceId)->where('messages.ai_generated', true)->count();
         $leadsCount = DB::table('contacts')->where('workspace_id', $workspaceId)->count();
@@ -86,6 +95,40 @@ class PageController extends Controller
             ->where('workspace_id', $workspaceId)
             ->latest('last_message_at')
             ->value('id') ?? 0;
+        $subscription = DB::table('subscriptions')->where('workspace_id', $workspaceId)->latest()->first();
+        if ($subscription?->status === 'active' && $subscription->renews_at && now()->greaterThan($subscription->renews_at)) {
+            DB::table('subscriptions')->where('id', $subscription->id)->update([
+                'status' => 'expired',
+                'ends_at' => $subscription->renews_at,
+                'updated_at' => now(),
+            ]);
+            $subscription = DB::table('subscriptions')->where('id', $subscription->id)->first();
+        }
+
+        $subscriptionNotice = null;
+        if ($subscription?->status === 'active' && $subscription->renews_at) {
+            $renewsAt = \Illuminate\Support\Carbon::parse($subscription->renews_at);
+            if ($renewsAt->isFuture() && $renewsAt->lessThanOrEqualTo(now()->addDays(2))) {
+                $subscriptionNotice = [
+                    'id' => 'subscription-renewal',
+                    'title' => 'Subscription expiring soon',
+                    'text' => 'Your subscription will expire on '.$renewsAt->format('M d, Y').'. Please renew or buy a subscription.',
+                    'count' => 1,
+                    'initial' => '!',
+                    'created_at' => now(),
+                ];
+            }
+        } elseif ($subscription?->status === 'expired') {
+            $subscriptionNotice = [
+                'id' => 'subscription-expired',
+                'title' => 'Subscription expired',
+                'text' => 'Your subscription has expired. Please buy a subscription to continue.',
+                'count' => 1,
+                'initial' => '!',
+                'created_at' => now(),
+            ];
+        }
+
         $unreadNotifications = (int) DB::table('conversations')
             ->where('workspace_id', $workspaceId)
             ->sum('unread_count');
@@ -105,6 +148,61 @@ class PageController extends Controller
                 'initial' => strtoupper(substr($conversation->name ?? 'C', 0, 1)),
                 'created_at' => $conversation->last_message_at,
             ]);
+        if ($subscriptionNotice) {
+            $notifications->prepend($subscriptionNotice);
+            $unreadNotifications++;
+        }
+        $messageSeriesRows = DB::table('messages')
+            ->join('conversations', 'conversations.id', '=', 'messages.conversation_id')
+            ->where('conversations.workspace_id', $workspaceId)
+            ->where('messages.sent_at', '>=', $chartStart)
+            ->selectRaw('DATE(messages.sent_at) as bucket, messages.direction, COUNT(*) as total')
+            ->groupBy('bucket', 'messages.direction')
+            ->get()
+            ->groupBy(fn ($row) => $row->bucket.'|'.$row->direction);
+
+        $messageSeries = collect(range(0, $chartDays - 1))->map(function (int $offset) use ($chartStart, $messageSeriesRows) {
+            $date = $chartStart->copy()->addDays($offset);
+            $bucket = $date->toDateString();
+
+            return [
+                'label' => $date->format('M j'),
+                'received' => (int) ($messageSeriesRows->get($bucket.'|inbound')?->first()?->total ?? 0),
+                'sent' => (int) ($messageSeriesRows->get($bucket.'|outbound')?->first()?->total ?? 0),
+            ];
+        })->values();
+
+        $channelRows = DB::table('contacts')
+            ->where('workspace_id', $workspaceId)
+            ->selectRaw("COALESCE(NULLIF(source, ''), 'whatsapp') as source, COUNT(*) as total")
+            ->groupBy('source')
+            ->orderByDesc('total')
+            ->limit(4)
+            ->get();
+        if ($channelRows->isEmpty()) {
+            $channelRows = collect([(object) ['source' => 'whatsapp', 'total' => $totalMessages]]);
+        }
+        $channelTotal = max(1, (int) $channelRows->sum('total'));
+        $channelPalette = [
+            ['class' => 'bg-violet-600', 'hex' => '#7c3aed'],
+            ['class' => 'bg-teal-500', 'hex' => '#14b8a6'],
+            ['class' => 'bg-sky-500', 'hex' => '#38bdf8'],
+            ['class' => 'bg-pink-400', 'hex' => '#f472b6'],
+        ];
+        $channels = $channelRows->values()->map(function ($channel, int $index) use ($channelTotal, $channelPalette) {
+            $palette = $channelPalette[$index] ?? $channelPalette[0];
+            $percent = round(((int) $channel->total / $channelTotal) * 100);
+
+            return [
+                'name' => ucfirst(str_replace('_', ' ', $channel->source)),
+                'value' => number_format((int) $channel->total),
+                'raw' => (int) $channel->total,
+                'width' => max(6, $percent).'%',
+                'percent' => $percent,
+                'color' => $palette['class'],
+                'hex' => $palette['hex'],
+            ];
+        });
 
         $screen = $request->route('screen') ?? 'Dashboard Overview';
 
@@ -120,8 +218,12 @@ class PageController extends Controller
                 ],
                 'accounts' => DB::table('whatsapp_accounts')->where('workspace_id', $workspaceId)->latest()->limit(3)->get(),
                 'activities' => DB::table('activity_logs')->where('workspace_id', $workspaceId)->latest()->limit(5)->get(),
+                'chartPeriod' => $chartPeriod,
+                'messageSeries' => $messageSeries,
+                'channels' => $channels,
                 'unreadNotifications' => $unreadNotifications,
                 'notifications' => $notifications,
+                'subscriptionNotice' => $subscriptionNotice,
                 'leads' => DB::table('contacts')->where('workspace_id', $workspaceId)->latest()->limit(4)->get(),
                 'conversations' => DB::table('conversations')
                     ->join('contacts', 'contacts.id', '=', 'conversations.contact_id')

@@ -412,22 +412,31 @@ Content-Type: application/json</pre>
           <section class="dash-card min-w-0">
             <div class="flex items-center justify-between gap-3">
               <h2>Messages Overview</h2>
-              <button class="shrink-0 rounded-xl bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 dark:bg-white/10 dark:text-white">This Week</button>
+              <select v-model="selectedChartPeriod" class="shrink-0 rounded-xl border border-slate-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 outline-none dark:border-white/10 dark:bg-white/10 dark:text-white" @change="changeChartPeriod">
+                <option v-for="option in chartPeriodOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+              </select>
             </div>
             <svg viewBox="0 0 760 300" class="mt-4 h-56 w-full sm:h-72">
               <g stroke="currentColor" stroke-opacity=".16" stroke-width="1">
                 <path v-for="y in [60,120,180,240]" :key="y" :d="`M40 ${y} H730`" />
               </g>
-              <path d="M40 230 C105 130 125 48 190 95 S285 230 350 112 S450 146 520 128 S630 255 720 122" fill="none" stroke="#7c3aed" stroke-width="5" stroke-linecap="round" />
-              <path d="M40 260 C100 198 140 142 205 185 S305 254 370 180 S480 246 535 170 S650 250 720 210" fill="none" stroke="#14b8a6" stroke-width="5" stroke-linecap="round" />
-              <g fill="#7c3aed"><circle cx="190" cy="95" r="6"/><circle cx="350" cy="112" r="6"/><circle cx="520" cy="128" r="6"/></g>
-              <g fill="#14b8a6"><circle cx="205" cy="185" r="6"/><circle cx="370" cy="180" r="6"/><circle cx="535" cy="170" r="6"/></g>
+              <path :d="receivedChartPath" fill="none" stroke="#7c3aed" stroke-width="5" stroke-linecap="round" />
+              <path :d="sentChartPath" fill="none" stroke="#14b8a6" stroke-width="5" stroke-linecap="round" />
+              <g fill="#7c3aed"><circle v-for="point in receivedChartPoints" :key="`r-${point.x}-${point.y}`" :cx="point.x" :cy="point.y" r="5" /></g>
+              <g fill="#14b8a6"><circle v-for="point in sentChartPoints" :key="`s-${point.x}-${point.y}`" :cx="point.x" :cy="point.y" r="5" /></g>
+              <g class="text-[11px] font-bold text-slate-400">
+                <text v-for="label in chartLabels" :key="label.text" :x="label.x" y="286" text-anchor="middle" fill="currentColor">{{ label.text }}</text>
+              </g>
             </svg>
+            <div class="mt-2 flex items-center gap-5 text-xs font-bold text-slate-500 dark:text-slate-400">
+              <span class="flex items-center gap-2"><span class="size-2 rounded-full bg-violet-600" /> Received</span>
+              <span class="flex items-center gap-2"><span class="size-2 rounded-full bg-teal-500" /> Sent</span>
+            </div>
           </section>
 
           <section class="dash-card min-w-0">
             <div class="flex items-center justify-between"><h2>Top Channels</h2><MoreHorizontal class="size-5 text-slate-400" /></div>
-            <div class="mx-auto mt-6 grid size-36 place-items-center rounded-full bg-[conic-gradient(#6d28d9_0_68%,#14b8a6_68%_86%,#38bdf8_86%_95%,#f472b6_95%_100%)] sm:size-40">
+            <div class="mx-auto mt-6 grid size-36 place-items-center rounded-full sm:size-40" :style="channelConicStyle">
               <div class="grid size-24 place-items-center rounded-full bg-white text-center shadow-inner dark:bg-[#10182b] sm:size-28">
                 <p class="text-xl font-black sm:text-2xl">{{ totalMessages }}</p>
                 <p class="text-xs text-slate-500">Total</p>
@@ -458,7 +467,7 @@ Content-Type: application/json</pre>
           </section>
 
           <section class="dash-card dark-card min-w-0">
-            <div class="flex items-center justify-between"><h2>Recent Leads</h2><span class="text-xs font-black text-violet-600">View all</span></div>
+            <div class="flex items-center justify-between"><h2>Recent Leads</h2><a href="/app/contacts" class="text-xs font-black text-violet-600 hover:text-violet-500">View all</a></div>
             <div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
               <div v-for="lead in leadRows" :key="lead.id ?? lead.name" class="flex min-w-0 items-center gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-white/8">
                 <div class="grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-orange-300 to-pink-500 text-sm font-black text-white">{{ initial(lead.name) }}</div>
@@ -490,7 +499,7 @@ Content-Type: application/json</pre>
         </section>
 
         <section class="dash-card min-w-0">
-          <div class="flex items-center justify-between"><h2>Recent Activity</h2><span class="text-xs font-black text-violet-600">View all</span></div>
+          <div class="flex items-center justify-between"><h2>Recent Activity</h2><a href="/app/activity" class="text-xs font-black text-violet-600 hover:text-violet-500">View all</a></div>
           <div class="mt-4 space-y-3">
             <div v-for="activity in activityRows" :key="activity.id ?? activity.description" class="flex min-w-0 items-center gap-3 text-sm">
               <div class="grid size-8 shrink-0 place-items-center rounded-xl bg-emerald-500 text-white"><CheckCircle2 class="size-4" /></div>
@@ -574,6 +583,7 @@ const props = defineProps<{ screen: string; workspace?: Row | null; dashboard?: 
 const page = usePage();
 const draft = ref('');
 const selectedConversationId = ref<number | string | null>(null);
+const selectedChartPeriod = ref(props.dashboard?.chartPeriod ?? 'week');
 const selectedAttachmentName = ref('');
 const selectedAttachmentFile = ref<File | null>(null);
 const sendingMessage = ref(false);
@@ -660,12 +670,37 @@ const crmStats = computed(() => {
   ];
 });
 
-const channels = [
-  { name: 'WhatsApp', value: '8,720', width: '78%', color: 'bg-violet-600' },
-  { name: 'Website', value: '1,486', width: '52%', color: 'bg-sky-500' },
-  { name: 'Facebook', value: '747', width: '26%', color: 'bg-indigo-500' },
-  { name: 'Instagram', value: '495', width: '18%', color: 'bg-pink-500' },
+const channels = computed(() => props.dashboard?.channels ?? fallbackChannels);
+const chartPeriodOptions = [
+  { label: 'This Week', value: 'week' },
+  { label: 'This Month', value: 'month' },
+  { label: 'Last 90 Days', value: 'quarter' },
 ];
+const messageSeries = computed(() => props.dashboard?.messageSeries?.length ? props.dashboard.messageSeries : fallbackMessageSeries);
+const chartMax = computed(() => Math.max(1, ...messageSeries.value.flatMap((row: Row) => [Number(row.received ?? 0), Number(row.sent ?? 0)])));
+const receivedChartPoints = computed(() => chartPoints('received'));
+const sentChartPoints = computed(() => chartPoints('sent'));
+const receivedChartPath = computed(() => chartPath(receivedChartPoints.value));
+const sentChartPath = computed(() => chartPath(sentChartPoints.value));
+const chartLabels = computed(() => {
+  const points = receivedChartPoints.value;
+  if (!points.length) return [];
+  const step = Math.max(1, Math.ceil(points.length / 5));
+
+  return points
+    .map((point: Row, index: number) => ({ x: point.x, text: messageSeries.value[index]?.label ?? '' }))
+    .filter((_, index: number) => index % step === 0 || index === points.length - 1);
+});
+const channelConicStyle = computed(() => {
+  let cursor = 0;
+  const stops = channels.value.map((channel: Row) => {
+    const start = cursor;
+    cursor += Number(channel.percent ?? 0);
+    return `${channel.hex ?? '#7c3aed'} ${start}% ${Math.max(start + 1, cursor)}%`;
+  });
+
+  return { background: `conic-gradient(${stops.join(', ')})` };
+});
 
 const countryOptions = [
   { label: '🇵🇰 Pakistan (+92)', value: '+92' },
@@ -989,6 +1024,33 @@ function mediaName(message: Row) {
   }
 }
 
+function chartPoints(key: 'received' | 'sent') {
+  const rows = messageSeries.value;
+  const width = 680;
+  const left = 40;
+  const top = 46;
+  const height = 210;
+  const denominator = Math.max(1, rows.length - 1);
+
+  return rows.map((row: Row, index: number) => ({
+    x: left + (width / denominator) * index,
+    y: top + height - (Number(row[key] ?? 0) / chartMax.value) * height,
+  }));
+}
+
+function chartPath(points: Row[]) {
+  if (!points.length) return '';
+  return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
+}
+
+function changeChartPeriod() {
+  router.get('/app/dashboard', { chart_period: selectedChartPeriod.value }, {
+    preserveScroll: true,
+    preserveState: true,
+    only: ['dashboard'],
+  });
+}
+
 function openRecord(row: Row) {
   viewRecord.value = row;
 }
@@ -1022,6 +1084,13 @@ watch(
   () => [activeChat.value?.id, messageRows.value.length, messageRows.value.at(-1)?.id, messageRows.value.at(-1)?.status],
   scrollChatToBottom,
   { immediate: true },
+);
+
+watch(
+  () => props.dashboard?.chartPeriod,
+  (period) => {
+    if (period) selectedChartPeriod.value = period;
+  },
 );
 
 watch(
@@ -1129,6 +1198,21 @@ const fallbackActivities = [
   { id: 1, description: 'New lead captured from WhatsApp', created_at: new Date().toISOString() },
   { id: 2, description: 'AI training data updated', created_at: new Date(Date.now() - 900000).toISOString() },
   { id: 3, description: 'Broadcast sent successfully', created_at: new Date(Date.now() - 3600000).toISOString() },
+];
+const fallbackChannels = [
+  { name: 'WhatsApp', value: '8,720', raw: 8720, width: '78%', percent: 78, color: 'bg-violet-600', hex: '#7c3aed' },
+  { name: 'Website', value: '1,486', raw: 1486, width: '52%', percent: 12, color: 'bg-sky-500', hex: '#38bdf8' },
+  { name: 'Facebook', value: '747', raw: 747, width: '26%', percent: 6, color: 'bg-indigo-500', hex: '#6366f1' },
+  { name: 'Instagram', value: '495', raw: 495, width: '18%', percent: 4, color: 'bg-pink-500', hex: '#ec4899' },
+];
+const fallbackMessageSeries = [
+  { label: 'Mon', received: 12, sent: 4 },
+  { label: 'Tue', received: 30, sent: 18 },
+  { label: 'Wed', received: 18, sent: 8 },
+  { label: 'Thu', received: 33, sent: 18 },
+  { label: 'Fri', received: 24, sent: 10 },
+  { label: 'Sat', received: 15, sent: 6 },
+  { label: 'Sun', received: 20, sent: 12 },
 ];
 const fallbackChats = [
   { id: 1, name: 'Emily Johnson', phone_number: '+1 (556) 123-4567', last_message_at: new Date().toISOString() },

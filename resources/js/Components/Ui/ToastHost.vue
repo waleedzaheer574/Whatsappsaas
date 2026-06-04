@@ -60,6 +60,10 @@ const validationMessage = computed(() => {
   if (!errors) return '';
   return Object.values(errors).find(Boolean) ?? '';
 });
+const subscriptionNotice = computed(() => {
+  const dashboard = page.props.dashboard as Record<string, any> | undefined;
+  return dashboard?.subscriptionNotice?.text ?? '';
+});
 
 function pushToast(type: ToastType, message: string) {
   if (!message) return;
@@ -85,4 +89,5 @@ function dismiss(id: number) {
 watch(flashSuccess, (message) => pushToast('success', message), { immediate: true });
 watch(flashError, (message) => pushToast('error', message), { immediate: true });
 watch(validationMessage, (message) => pushToast('error', message), { immediate: true });
+watch(subscriptionNotice, (message) => pushToast('error', message), { immediate: true });
 </script>

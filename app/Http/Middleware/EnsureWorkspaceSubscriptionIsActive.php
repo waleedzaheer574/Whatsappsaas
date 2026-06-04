@@ -19,7 +19,17 @@ class EnsureWorkspaceSubscriptionIsActive
             ? DB::table('subscriptions')->where('workspace_id', $workspaceId)->first()
             : null;
 
-        $isActive = $subscription?->status === 'active';
+        if ($subscription?->status === 'active' && $subscription->renews_at && now()->greaterThan($subscription->renews_at)) {
+            DB::table('subscriptions')->where('id', $subscription->id)->update([
+                'status' => 'expired',
+                'ends_at' => $subscription->renews_at,
+                'updated_at' => now(),
+            ]);
+            $subscription->status = 'expired';
+        }
+
+        $isActive = $subscription?->status === 'active'
+            && (! $subscription->renews_at || now()->lessThanOrEqualTo($subscription->renews_at));
         $isTrialing = $subscription?->status === 'trialing'
             && (! $subscription->trial_ends_at || now()->lessThanOrEqualTo($subscription->trial_ends_at));
 
@@ -33,6 +43,6 @@ class EnsureWorkspaceSubscriptionIsActive
 
         return redirect()
             ->route('dashboard.billing')
-            ->with('error', 'Please choose a subscription plan to unlock your CRM workspace.');
+            ->with('error', 'Your subscription has expired. Please buy a subscription to continue using your CRM workspace.');
     }
 }
