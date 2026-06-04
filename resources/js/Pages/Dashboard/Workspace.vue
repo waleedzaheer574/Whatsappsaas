@@ -99,6 +99,7 @@ Content-Type: application/json</pre>
             <div v-if="currentSubscription" class="mt-4 rounded-2xl bg-slate-50 p-4 text-sm dark:bg-white/8">
               <p class="font-black">{{ cleanStatus(currentSubscription.plan) }} Plan</p>
               <p class="mt-1 text-slate-500 dark:text-slate-400">Status: {{ cleanStatus(currentSubscription.status) }}</p>
+              <p class="mt-1 text-slate-500 dark:text-slate-400">Bought: {{ currentSubscription.created_at ? dateTime(currentSubscription.created_at) : 'Not set' }}</p>
               <p class="mt-1 text-slate-500 dark:text-slate-400">Renews: {{ currentSubscription.renews_at ? new Date(currentSubscription.renews_at).toLocaleDateString() : 'Not set' }}</p>
             </div>
             <p v-else class="mt-4 text-sm font-bold text-slate-500 dark:text-slate-400">No active subscription yet.</p>
@@ -140,6 +141,7 @@ Content-Type: application/json</pre>
             <div class="flex flex-wrap gap-2">
               <span class="rounded-full bg-violet-100 px-4 py-2 text-xs font-black text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">{{ chatRows.length }} Conversations</span>
               <span v-if="totalUnreadChats" class="rounded-full bg-emerald-100 px-4 py-2 text-xs font-black text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200">{{ totalUnreadChats }} Unread</span>
+              <span v-if="currentSubscription" class="rounded-full bg-slate-100 px-4 py-2 text-xs font-black text-slate-700 dark:bg-white/10 dark:text-slate-200">Plan bought {{ relativeTime(currentSubscription.created_at) }}</span>
             </div>
           </div>
 
@@ -175,12 +177,14 @@ Content-Type: application/json</pre>
                   <div class="min-w-0">
                     <p class="truncate text-sm font-black">{{ chat.name }}</p>
                     <p :class="['truncate text-xs', activeChat?.id === chat.id ? 'text-white/70' : 'text-slate-500']">{{ chat.phone_number }}</p>
+                    <p v-if="isBlocked(chat)" :class="['mt-1 text-[10px] font-black uppercase', activeChat?.id === chat.id ? 'text-red-100' : 'text-red-500']">Blocked</p>
                   </div>
                   <div class="ml-auto grid justify-items-end gap-1">
                     <span :class="['shrink-0 text-[11px]', activeChat?.id === chat.id ? 'text-white/70' : 'text-slate-400']">{{ relativeTime(chat.last_message_at) }}</span>
                     <span v-if="chat.unread_count" class="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-black text-white">{{ chat.unread_count }}</span>
                   </div>
                 </button>
+                <button class="grid size-8 shrink-0 place-items-center rounded-xl bg-amber-500/10 text-[10px] font-black text-amber-500" type="button" @click="toggleContactBlock(chat)">{{ isBlocked(chat) ? 'Un' : 'Blk' }}</button>
                 <button class="grid size-8 shrink-0 place-items-center rounded-xl bg-red-500/10 text-xs font-black text-red-500" type="button" @click="deleteChat(chat.id)">Del</button>
               </div>
               <div v-if="!chatRows.length" class="rounded-2xl border border-dashed border-slate-200 p-5 text-center text-sm font-bold text-slate-400 dark:border-white/10">
@@ -196,8 +200,10 @@ Content-Type: application/json</pre>
                 <p class="truncate text-sm font-black">{{ activeChat?.name ?? 'Select a conversation' }}</p>
                 <p class="truncate text-xs text-slate-500">{{ activeChat?.phone_number ?? 'Contact chat will show here' }}</p>
               </div>
-              <span v-if="activeChat" class="ml-auto hidden rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 sm:inline-flex">Open</span>
+              <span v-if="activeChat" :class="['ml-auto hidden rounded-full px-3 py-1 text-xs font-black sm:inline-flex', activeChatBlocked ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-200' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300']">{{ activeChatBlocked ? 'Blocked' : 'Open' }}</span>
+              <button v-if="activeChat" class="rounded-xl bg-amber-50 px-2 py-2 text-[11px] font-black text-amber-700 dark:bg-amber-500/10 dark:text-amber-200 sm:px-3 sm:text-xs" type="button" @click="toggleContactBlock(activeChat)">{{ activeChatBlocked ? 'Unblock' : 'Block' }}</button>
               <button v-if="activeChat" class="rounded-xl bg-red-50 px-2 py-2 text-[11px] font-black text-red-600 dark:bg-red-500/10 sm:px-3 sm:text-xs" type="button" @click="deleteChat(activeChat.id)">Delete</button>
+              <button v-if="activeChat?.contact_id" class="hidden rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-700 dark:bg-red-500/10 dark:text-red-200 sm:inline-flex" type="button" @click="deleteContact(activeChat.contact_id)">Delete Contact</button>
             </div>
 
             <div ref="messagesPanel" class="app-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto p-3 text-sm sm:p-4">
@@ -210,9 +216,12 @@ Content-Type: application/json</pre>
                   <span class="truncate">{{ mediaName(message) }}</span>
                 </a>
                 <p>{{ message.body }}</p>
-                <div class="mt-2 flex items-center justify-end gap-2 text-[11px]">
+                <div class="mt-2 flex flex-wrap items-center justify-end gap-2 text-[11px]">
+                  <span :class="message.direction === 'outbound' ? 'text-white/75' : 'text-slate-500 dark:text-slate-400'">{{ dateTime(message.sent_at ?? message.created_at) }}</span>
+                  <span :class="message.direction === 'outbound' ? 'text-white/60' : 'text-slate-400'">{{ relativeTime(message.sent_at ?? message.created_at) }}</span>
                   <button class="rounded-lg bg-black/10 px-2 py-1 font-black text-red-200 hover:bg-black/20" type="button" @click="deleteMessage(message.id)">Delete</button>
-                  <span :class="messageStatusClass(message.status)">{{ messageStatusIcon(message.status) }}</span>
+                  <span class="font-black uppercase">{{ cleanStatus(message.status) }}</span>
+                  <span :class="message.direction === 'outbound' ? messageStatusClass(message.status) : 'font-black text-slate-400 dark:text-slate-500'">{{ messageTickIcon(message.status) }}</span>
                 </div>
               </div>
               <div v-if="activeChat && !messageRows.length" class="grid min-h-[360px] place-items-center text-center">
@@ -225,12 +234,12 @@ Content-Type: application/json</pre>
             </div>
 
             <div class="shrink-0 flex gap-2 border-t border-slate-200 p-2 dark:border-white/10 sm:p-3">
-              <input v-model="draft" class="min-w-0 flex-1 rounded-2xl bg-slate-100 px-3 py-3 text-sm font-semibold outline-none dark:bg-white/10 sm:px-4" :disabled="!activeChat" placeholder="Type a message..." @keyup.enter="sendMessage" />
-              <label class="grid size-11 shrink-0 cursor-pointer place-items-center rounded-2xl bg-slate-100 text-sm font-black text-slate-600 dark:bg-white/10 dark:text-white sm:size-12">
+              <input v-model="draft" class="min-w-0 flex-1 rounded-2xl bg-slate-100 px-3 py-3 text-sm font-semibold outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/10 sm:px-4" :disabled="!activeChat || activeChatBlocked" :placeholder="activeChatBlocked ? 'Contact is blocked. Unblock to send a message.' : 'Type a message...'" @keyup.enter="sendMessage" />
+              <label :class="['grid size-11 shrink-0 place-items-center rounded-2xl bg-slate-100 text-sm font-black text-slate-600 dark:bg-white/10 dark:text-white sm:size-12', activeChatBlocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer']">
                 +
-                <input class="hidden" type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" @change="selectAttachment" />
+                <input class="hidden" type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" :disabled="activeChatBlocked" @change="selectAttachment" />
               </label>
-              <button type="button" class="grid size-11 shrink-0 place-items-center rounded-2xl bg-violet-600 text-white disabled:opacity-50 sm:size-12" :disabled="!activeChat || sendingMessage" @click.prevent="sendMessage"><Send class="size-5" /></button>
+              <button type="button" class="grid size-11 shrink-0 place-items-center rounded-2xl bg-violet-600 text-white disabled:opacity-50 sm:size-12" :disabled="!activeChat || sendingMessage || activeChatBlocked" @click.prevent="sendMessage"><Send class="size-5" /></button>
             </div>
             <div v-if="selectedAttachmentName" class="shrink-0 border-t border-slate-200 px-4 py-2 text-xs font-bold text-slate-500 dark:border-white/10">
               Attached: {{ selectedAttachmentName }}
@@ -253,7 +262,7 @@ Content-Type: application/json</pre>
             </article>
           </div>
 
-          <div class="grid min-w-0 gap-4 xl:grid-cols-4">
+          <div class="grid min-w-0 gap-4 xl:grid-cols-5">
             <article v-for="stage in crmStages" :key="stage.key" class="dash-card min-h-[320px]">
               <div class="mb-4 flex items-center justify-between gap-2">
                 <h2>{{ stage.label }}</h2>
@@ -270,9 +279,10 @@ Content-Type: application/json</pre>
                   </div>
                   <div class="mt-3 flex items-center justify-between gap-2 text-xs">
                     <span class="font-black text-slate-500 dark:text-slate-400">{{ money(contact.deal_value ?? contact.value ?? 0) }}</span>
-                    <button class="rounded-lg bg-white px-3 py-1 font-black text-violet-700 disabled:opacity-50 dark:bg-white/10 dark:text-violet-200" :disabled="stageForm.processing" @click="moveContact(contact, nextStage(stage.key))">
+                    <button v-if="stage.key !== 'blocked'" class="rounded-lg bg-white px-3 py-1 font-black text-violet-700 disabled:opacity-50 dark:bg-white/10 dark:text-violet-200" :disabled="stageForm.processing" @click="moveContact(contact, nextStage(stage.key))">
                       Move
                     </button>
+                    <button class="rounded-lg bg-amber-50 px-3 py-1 font-black text-amber-700 dark:bg-amber-500/10 dark:text-amber-200" @click="toggleContactBlock(contact)">{{ isBlocked(contact) ? 'Unblock' : 'Block' }}</button>
                     <button class="rounded-lg bg-red-50 px-3 py-1 font-black text-red-600 dark:bg-red-500/10" @click="deleteContact(contact.id)">Delete</button>
                   </div>
                 </div>
@@ -330,7 +340,7 @@ Content-Type: application/json</pre>
           </div>
           <h2>{{ card.title }}</h2>
           <p class="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">{{ card.text }}</p>
-          <button class="mt-5 rounded-xl bg-slate-100 px-4 py-2 text-xs font-black text-slate-700 dark:bg-white/10 dark:text-white">Open</button>
+          <button class="mt-5 rounded-xl bg-slate-100 px-4 py-2 text-xs font-black text-slate-700 transition hover:bg-violet-100 hover:text-violet-700 dark:bg-white/10 dark:text-white dark:hover:bg-violet-500/20 dark:hover:text-violet-200" type="button" @click="openModuleCard(card)">Open</button>
         </article>
       </section>
 
@@ -362,7 +372,7 @@ Content-Type: application/json</pre>
       <section v-if="screen !== 'Inbox / Live Chat'" class="dash-card overflow-hidden">
         <div class="flex items-center justify-between gap-3">
           <h2>{{ pageTitle }} Records</h2>
-          <input class="w-full max-w-xs rounded-xl bg-slate-100 px-4 py-2 text-sm outline-none dark:bg-white/10" placeholder="Search..." />
+          <input v-model="recordsSearch" class="w-full max-w-xs rounded-xl bg-slate-100 px-4 py-2 text-sm outline-none dark:bg-white/10" placeholder="Search records..." />
         </div>
         <div class="mt-5 overflow-x-auto">
           <table class="w-full min-w-[680px] text-left text-sm">
@@ -370,7 +380,7 @@ Content-Type: application/json</pre>
               <tr><th class="py-3">Name</th><th>Status</th><th>Owner</th><th>Updated</th><th>Action</th></tr>
             </thead>
             <tbody>
-              <tr v-for="row in tableRows" :key="row.key" class="border-t border-slate-200 dark:border-white/10">
+              <tr v-for="row in filteredTableRows" :key="row.key" class="border-t border-slate-200 dark:border-white/10">
                 <td class="py-4 font-black">{{ row.name }}</td>
                 <td><span class="rounded-full bg-violet-100 px-3 py-1 text-xs font-black text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">{{ row.status }}</span></td>
                 <td>{{ row.owner }}</td>
@@ -379,17 +389,18 @@ Content-Type: application/json</pre>
               </tr>
             </tbody>
           </table>
+          <p v-if="!filteredTableRows.length" class="py-8 text-center text-sm font-bold text-slate-400">No records found.</p>
         </div>
       </section>
     </section>
 
-    <section v-else class="grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_420px]">
+    <section v-else :class="['grid min-w-0 gap-4', isSuperAdmin ? '' : '2xl:grid-cols-[minmax(0,1fr)_420px]']">
       <div class="grid min-w-0 gap-4">
         <section class="relative overflow-hidden rounded-[24px] bg-gradient-to-br from-violet-700 via-violet-600 to-indigo-700 p-5 text-white shadow-glow sm:p-6">
           <div class="absolute inset-y-0 right-0 hidden w-[28%] bg-[radial-gradient(circle_at_58%_50%,rgba(255,255,255,.22),transparent_42%)] xl:block" />
           <div class="relative z-10 max-w-4xl xl:max-w-[calc(100%-160px)]">
             <h1 class="text-2xl font-black sm:text-3xl">Welcome back, {{ userName }}!</h1>
-            <p class="mt-2 text-sm font-medium text-white/80">Your AI assistant is working hard for {{ workspace?.name ?? 'your business' }} today.</p>
+            <p class="mt-2 text-sm font-medium text-white/80">{{ isSuperAdmin ? 'Your platform revenue, customers and subscriptions are live below.' : `Your AI assistant is working hard for ${workspace?.name ?? 'your business'} today.` }}</p>
             <div class="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <article v-for="stat in statCards" :key="stat.label" class="min-w-0 rounded-2xl border border-white/15 bg-white/12 p-4 backdrop-blur-xl">
                 <div class="mb-4 grid size-9 place-items-center rounded-xl bg-white/16">
@@ -397,9 +408,12 @@ Content-Type: application/json</pre>
                 </div>
                 <p class="truncate text-xs font-bold text-white/75">{{ stat.label }}</p>
                 <p class="mt-1 truncate text-2xl font-black">{{ stat.value }}</p>
-                <p class="mt-1 text-xs font-black text-emerald-300">+ {{ stat.change }}%</p>
+                <p class="mt-1 text-xs font-black text-emerald-300">{{ isSuperAdmin ? stat.change : `+ ${stat.change}%` }}</p>
               </article>
             </div>
+            <p v-if="!isSuperAdmin && currentSubscription" class="mt-4 inline-flex rounded-full bg-white/14 px-4 py-2 text-xs font-black text-white/85 ring-1 ring-white/15">
+              {{ cleanStatus(currentSubscription.plan) }} plan bought {{ relativeTime(currentSubscription.created_at) }} - Renews {{ currentSubscription.renews_at ? new Date(currentSubscription.renews_at).toLocaleDateString() : 'not set' }}
+            </p>
           </div>
           <div class="pointer-events-none absolute bottom-5 right-5 z-0 hidden xl:block 2xl:right-8">
             <div class="grid size-28 place-items-center rounded-[30px] bg-white/12 ring-1 ring-white/15 backdrop-blur-xl 2xl:size-32">
@@ -408,11 +422,160 @@ Content-Type: application/json</pre>
           </div>
         </section>
 
-        <div class="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(260px,.7fr)]">
+        <section v-if="isSuperAdmin" class="grid gap-4">
+          <div class="dash-card border-violet-200 bg-violet-50/80 dark:border-violet-400/20 dark:bg-violet-500/10">
+            <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+              <div>
+                <p class="text-xs font-black uppercase text-violet-600 dark:text-violet-300">Platform Owner</p>
+                <h2 class="mt-1 text-xl font-black">John Doe Super Admin Control Center</h2>
+                <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">Manage all customer workspaces, users, subscriptions, renewals and plan limits from here.</p>
+              </div>
+              <span class="rounded-full bg-white px-4 py-2 text-xs font-black text-violet-700 shadow-sm dark:bg-white/10 dark:text-violet-200">admin@chatflow.test</span>
+            </div>
+            <div v-if="platformDetailStats.length" class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <article v-for="stat in platformDetailStats" :key="stat.label" class="rounded-2xl bg-white p-4 shadow-sm dark:bg-white/[.06]">
+                <p class="text-xs font-black uppercase text-slate-500 dark:text-slate-400">{{ stat.label }}</p>
+                <p class="mt-2 text-2xl font-black">{{ stat.value }}</p>
+                <p class="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">{{ stat.help }}</p>
+              </article>
+            </div>
+          </div>
+
+          <div class="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,.7fr)]">
+            <section class="dash-card">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <h2>Platform Earnings</h2>
+                  <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Paid invoice revenue from all customer subscriptions.</p>
+                </div>
+                <span class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">Last 30 days</span>
+              </div>
+              <svg viewBox="0 0 760 280" class="mt-4 h-56 w-full">
+                <g stroke="currentColor" stroke-opacity=".14" stroke-width="1">
+                  <path v-for="y in [56,112,168,224]" :key="y" :d="`M40 ${y} H730`" />
+                </g>
+                <path :d="platformRevenuePath" fill="none" stroke="#10b981" stroke-width="5" stroke-linecap="round" />
+                <g fill="#10b981"><circle v-for="point in platformRevenuePoints" :key="`${point.x}-${point.y}`" :cx="point.x" :cy="point.y" r="4" /></g>
+                <g class="text-[11px] font-bold text-slate-400">
+                  <text v-for="label in platformRevenueLabels" :key="label.text" :x="label.x" y="266" text-anchor="middle" fill="currentColor">{{ label.text }}</text>
+                </g>
+              </svg>
+            </section>
+
+            <section class="dash-card">
+              <h2>Plan Breakdown</h2>
+              <div class="mt-4 grid gap-3">
+                <article v-for="plan in platformPlanBreakdown" :key="`${plan.plan}-${plan.status}`" class="rounded-2xl bg-slate-50 p-3 dark:bg-white/[.06]">
+                  <div class="flex items-center justify-between gap-3">
+                    <p class="font-black">{{ cleanStatus(plan.plan) }}</p>
+                    <span :class="['rounded-full px-2 py-1 text-xs font-black', plan.status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300']">{{ cleanStatus(plan.status) }}</span>
+                  </div>
+                  <p class="mt-2 text-2xl font-black">{{ plan.total }}</p>
+                </article>
+                <p v-if="!platformPlanBreakdown.length" class="text-sm font-bold text-slate-400">No subscription data yet.</p>
+              </div>
+            </section>
+          </div>
+
+          <section v-if="platformExpiringSoon.length" class="dash-card border-amber-200 bg-amber-50/80 dark:border-amber-400/20 dark:bg-amber-500/10">
+            <h2>Renewal Reminders</h2>
+            <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <article v-for="item in platformExpiringSoon" :key="`${item.workspace_name}-${item.renews_at}`" class="rounded-2xl bg-white p-4 dark:bg-white/[.06]">
+                <p class="font-black">{{ item.workspace_name }}</p>
+                <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">{{ cleanStatus(item.plan) }} renews on {{ new Date(item.renews_at).toLocaleDateString() }}</p>
+              </article>
+            </div>
+          </section>
+
+          <div class="grid gap-4 xl:grid-cols-3">
+            <section class="dash-card xl:col-span-2">
+              <h2>Recent Payments</h2>
+              <div class="mt-4 overflow-x-auto">
+                <table class="w-full min-w-[640px] text-left text-sm">
+                  <thead class="text-slate-500">
+                    <tr><th class="py-3">Invoice</th><th>Workspace</th><th>Amount</th><th>Status</th><th>Paid</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="invoice in platformRecentInvoices" :key="invoice.id" class="border-t border-slate-200 dark:border-white/10">
+                      <td class="py-3 font-black">{{ invoice.number ?? `INV-${invoice.id}` }}</td>
+                      <td>{{ invoice.workspace_name }}</td>
+                      <td>${{ Number(invoice.amount_paid || invoice.amount_due || 0).toLocaleString() }}</td>
+                      <td><span :class="['rounded-full px-3 py-1 text-xs font-black', invoice.status === 'paid' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300']">{{ cleanStatus(invoice.status) }}</span></td>
+                      <td>{{ invoice.paid_at ? new Date(invoice.paid_at).toLocaleDateString() : 'Pending' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p v-if="!platformRecentInvoices.length" class="py-6 text-center text-sm font-bold text-slate-400">No payments yet.</p>
+              </div>
+            </section>
+
+            <section class="dash-card">
+              <h2>Recent Users</h2>
+              <div class="mt-4 grid gap-3">
+                <article v-for="user in platformUsers.slice(0, 6)" :key="user.id" class="flex min-w-0 items-center gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-white/[.06]">
+                  <div class="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-amber-300 to-pink-500 text-xs font-black text-white">{{ initial(user.name) }}</div>
+                  <div class="min-w-0">
+                    <p class="truncate text-sm font-black">{{ user.name }}</p>
+                    <p class="truncate text-xs text-slate-500">{{ user.email }}</p>
+                    <p class="truncate text-xs text-violet-500">{{ user.workspace_name ?? 'No workspace' }}</p>
+                  </div>
+                </article>
+                <p v-if="!platformUsers.length" class="text-sm font-bold text-slate-400">No users yet.</p>
+              </div>
+            </section>
+          </div>
+
+          <div class="dash-card overflow-hidden">
+            <div class="flex items-center justify-between gap-3">
+              <h2>Customer Workspaces</h2>
+              <input v-model="platformSearch" class="w-full max-w-xs rounded-xl bg-slate-100 px-4 py-2 text-sm outline-none dark:bg-white/10" placeholder="Search customers..." />
+            </div>
+            <div class="mt-5 overflow-x-auto">
+              <table class="w-full min-w-[900px] text-left text-sm">
+                <thead class="text-slate-500">
+                  <tr><th class="py-3">Workspace</th><th>Owner</th><th>Plan</th><th>Status</th><th>Renews</th><th>Control</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="workspaceRow in filteredPlatformWorkspaces" :key="workspaceRow.id" class="border-t border-slate-200 dark:border-white/10">
+                    <td class="py-4">
+                      <p class="font-black">{{ workspaceRow.name }}</p>
+                      <p class="text-xs text-slate-500">{{ workspaceRow.slug }}</p>
+                    </td>
+                    <td>
+                      <p class="font-bold">{{ workspaceRow.owner_name ?? 'No owner' }}</p>
+                      <p class="text-xs text-slate-500">{{ workspaceRow.owner_email ?? 'Not assigned' }}</p>
+                    </td>
+                    <td><span class="rounded-full bg-violet-100 px-3 py-1 text-xs font-black text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">{{ cleanStatus(workspaceRow.plan) }}</span></td>
+                    <td><span :class="['rounded-full px-3 py-1 text-xs font-black', workspaceRow.subscription_status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300']">{{ cleanStatus(workspaceRow.subscription_status ?? 'not active') }}</span></td>
+                    <td>{{ workspaceRow.renews_at ? new Date(workspaceRow.renews_at).toLocaleDateString() : 'Not set' }}</td>
+                    <td>
+                      <div class="flex gap-2">
+                        <select v-model="workspaceRow.adminPlan" class="dashboard-select">
+                          <option value="starter">Starter</option>
+                          <option value="pro">Pro</option>
+                          <option value="agency">Agency</option>
+                        </select>
+                        <select v-model="workspaceRow.adminStatus" class="dashboard-select">
+                          <option value="active">Active</option>
+                          <option value="expired">Expired</option>
+                          <option value="canceled">Canceled</option>
+                        </select>
+                        <button class="rounded-xl bg-violet-600 px-4 py-2 text-xs font-black text-white shadow-glow disabled:opacity-60" :disabled="adminSubscriptionForm.processing" type="button" @click="updateCustomerSubscription(workspaceRow)">Save</button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-if="!filteredPlatformWorkspaces.length" class="py-8 text-center text-sm font-bold text-slate-400">No customers found.</p>
+            </div>
+          </div>
+        </section>
+
+        <div v-if="!isSuperAdmin" class="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(260px,.7fr)]">
           <section class="dash-card min-w-0">
             <div class="flex items-center justify-between gap-3">
               <h2>Messages Overview</h2>
-              <select v-model="selectedChartPeriod" class="shrink-0 rounded-xl border border-slate-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 outline-none dark:border-white/10 dark:bg-white/10 dark:text-white" @change="changeChartPeriod">
+              <select v-model="selectedChartPeriod" class="dashboard-select shrink-0" @change="changeChartPeriod">
                 <option v-for="option in chartPeriodOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
               </select>
             </div>
@@ -452,7 +615,7 @@ Content-Type: application/json</pre>
           </section>
         </div>
 
-        <div class="grid min-w-0 gap-4 xl:grid-cols-2">
+        <div v-if="!isSuperAdmin" class="grid min-w-0 gap-4 xl:grid-cols-2">
           <section class="dash-card dark-card min-w-0">
             <div class="flex items-center justify-between"><h2>Top Performing Channels</h2><MoreHorizontal class="size-5 text-slate-400" /></div>
             <div class="mt-6 space-y-4">
@@ -482,7 +645,7 @@ Content-Type: application/json</pre>
         </div>
       </div>
 
-      <aside class="grid min-w-0 gap-4">
+      <aside v-if="!isSuperAdmin" class="grid min-w-0 gap-4">
         <section class="dash-card min-w-0">
           <div class="flex items-center justify-between gap-3"><h2>WhatsApp Accounts</h2><button class="shrink-0 rounded-xl bg-violet-100 px-3 py-2 text-xs font-black text-violet-700">+ Add New</button></div>
           <div class="mt-4 space-y-3">
@@ -515,15 +678,21 @@ Content-Type: application/json</pre>
             <MoreVertical class="size-5 text-slate-400" />
           </div>
           <div class="mt-4 grid grid-cols-4 gap-1 rounded-2xl bg-slate-100 p-1 text-center text-[11px] font-black dark:bg-white/10 sm:text-xs">
-            <button class="rounded-xl bg-white py-2 text-violet-600 shadow-sm dark:bg-violet-600 dark:text-white">All</button>
-            <button>Unread</button><button>Assigned</button><button>Resolved</button>
+            <button v-for="filter in dashboardInboxFilters" :key="filter.value" :class="['rounded-xl py-2 transition', dashboardInboxFilter === filter.value ? 'bg-white text-violet-600 shadow-sm dark:bg-violet-600 dark:text-white' : 'text-slate-500 hover:text-violet-600 dark:text-slate-300']" type="button" @click="dashboardInboxFilter = filter.value">{{ filter.label }}</button>
           </div>
           <div class="mt-4 grid min-h-[500px] overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 2xl:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]">
             <div class="min-w-0 border-slate-200 bg-slate-50/60 p-2 dark:border-white/10 dark:bg-white/5 2xl:border-r">
-              <div v-for="chat in chatRows" :key="chat.id ?? chat.name" class="mb-2 flex min-w-0 items-center gap-3 rounded-2xl bg-white p-3 shadow-sm dark:bg-white/8">
+              <div v-for="chat in filteredDashboardChats" :key="chat.id ?? chat.name" class="mb-2 flex min-w-0 items-center gap-3 rounded-2xl bg-white p-3 shadow-sm dark:bg-white/8">
                 <div class="grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-amber-300 to-rose-500 text-white">{{ initial(chat.name) }}</div>
-                <div class="min-w-0"><p class="truncate text-sm font-black">{{ chat.name }}</p><p class="truncate text-xs text-slate-500">{{ chat.phone_number }}</p></div>
+                <div class="min-w-0"><p class="truncate text-sm font-black">{{ chat.name }}</p><p class="truncate text-xs text-slate-500">{{ chat.phone_number }}</p><p v-if="isBlocked(chat)" class="text-[10px] font-black uppercase text-red-500">Blocked</p></div>
                 <span class="ml-auto shrink-0 text-[11px] text-slate-400">{{ relativeTime(chat.last_message_at) }}</span>
+              </div>
+              <div v-if="!filteredDashboardChats.length" class="grid min-h-40 place-items-center rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-center dark:border-white/10 dark:bg-white/[.04]">
+                <div>
+                  <MessageSquare class="mx-auto size-8 text-slate-400" />
+                  <p class="mt-3 text-sm font-black text-slate-700 dark:text-slate-200">{{ dashboardEmptyTitle }}</p>
+                  <p class="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">{{ dashboardEmptySubtitle }}</p>
+                </div>
               </div>
             </div>
             <div class="hidden min-w-0 flex-col bg-white dark:bg-[#10182b] 2xl:flex">
@@ -532,11 +701,25 @@ Content-Type: application/json</pre>
                 <div class="min-w-0"><p class="truncate text-sm font-black">{{ activeChat?.name ?? 'Emily Johnson' }}</p><p class="truncate text-xs text-slate-500">{{ activeChat?.phone_number ?? '+1 (556) 123-4567' }}</p></div>
               </div>
               <div class="flex-1 space-y-3 p-4 text-sm">
-                <div v-for="message in messageRows" :key="message.id ?? message.body" :class="[message.direction === 'outbound' ? 'ml-auto bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white' : 'bg-slate-100 dark:bg-white/10', 'max-w-[86%] rounded-2xl p-3']">{{ message.body }}</div>
+              <div v-for="message in messageRows" :key="message.id ?? message.body" :class="[message.direction === 'outbound' ? 'ml-auto bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white' : 'bg-slate-100 dark:bg-white/10', 'max-w-[86%] rounded-2xl p-3']">
+                <p>{{ message.body }}</p>
+                <div class="mt-2 flex flex-wrap items-center justify-end gap-2 text-[10px]">
+                  <span :class="message.direction === 'outbound' ? 'text-white/70' : 'text-slate-500 dark:text-slate-400'">{{ dateTime(message.sent_at ?? message.created_at) }}</span>
+                  <span class="font-black uppercase">{{ cleanStatus(message.status) }}</span>
+                  <span :class="message.direction === 'outbound' ? messageStatusClass(message.status) : 'font-black text-slate-400 dark:text-slate-500'">{{ messageTickIcon(message.status) }}</span>
+                </div>
+              </div>
+              <div v-if="!filteredDashboardChats.length" class="grid min-h-64 place-items-center text-center">
+                <div>
+                  <MessageSquare class="mx-auto size-10 text-slate-400" />
+                  <p class="mt-3 text-sm font-black text-slate-700 dark:text-slate-200">{{ dashboardEmptyTitle }}</p>
+                  <p class="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">{{ dashboardEmptySubtitle }}</p>
+                </div>
+              </div>
               </div>
               <div class="flex gap-2 border-t border-slate-200 p-3 dark:border-white/10">
-                <input v-model="draft" class="min-w-0 flex-1 rounded-xl bg-slate-100 px-3 text-sm outline-none dark:bg-white/10" placeholder="Type a message..." @keyup.enter="sendMessage" />
-                <button class="grid size-11 shrink-0 place-items-center rounded-xl bg-violet-600 text-white disabled:opacity-60" :disabled="messageForm.processing" @click="sendMessage"><Send class="size-5" /></button>
+                <input v-model="draft" class="min-w-0 flex-1 rounded-xl bg-slate-100 px-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/10" :disabled="activeChatBlocked" :placeholder="activeChatBlocked ? 'Contact is blocked.' : 'Type a message...'" @keyup.enter="sendMessage" />
+                <button class="grid size-11 shrink-0 place-items-center rounded-xl bg-violet-600 text-white disabled:opacity-60" :disabled="messageForm.processing || activeChatBlocked" @click="sendMessage"><Send class="size-5" /></button>
               </div>
             </div>
           </div>
@@ -574,16 +757,19 @@ Content-Type: application/json</pre>
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { Head, router, useForm, usePage } from '@inertiajs/vue3';
-import { Bot, CheckCircle2, MessageSquare, MoreHorizontal, MoreVertical, Phone, Send, ShieldCheck, UserPlus } from 'lucide-vue-next';
+import { Bot, CheckCircle2, MessageSquare, MoreHorizontal, MoreVertical, Phone, Send, ShieldCheck, UserPlus, Users } from 'lucide-vue-next';
 import DashboardLayout from '@/Layouts/DashboardLayout.vue';
 
 type Row = Record<string, any>;
 
-const props = defineProps<{ screen: string; workspace?: Row | null; dashboard?: Row; module?: Row }>();
+const props = defineProps<{ screen: string; workspace?: Row | null; dashboard?: Row; module?: Row; isSuperAdmin?: boolean; platform?: Row | null }>();
 const page = usePage();
 const draft = ref('');
 const selectedConversationId = ref<number | string | null>(null);
 const selectedChartPeriod = ref(props.dashboard?.chartPeriod ?? 'week');
+const dashboardInboxFilter = ref('all');
+const recordsSearch = ref('');
+const platformSearch = ref('');
 const selectedAttachmentName = ref('');
 const selectedAttachmentFile = ref<File | null>(null);
 const sendingMessage = ref(false);
@@ -613,6 +799,7 @@ const moduleForm = useForm<Record<string, any>>({
   timezone: props.workspace?.timezone ?? 'Asia/Karachi',
 });
 const checkoutForm = useForm<Record<string, any>>({ plan: 'pro' });
+const adminSubscriptionForm = useForm<Record<string, any>>({ plan: 'pro', status: 'active' });
 const messageForm = useForm<Record<string, any>>({ body: '', attachment: null });
 const stageForm = useForm<Record<string, any>>({ status: '' });
 const noteForm = useForm<Record<string, any>>({ contact_id: '', body: '', next_follow_up_at: '' });
@@ -622,19 +809,96 @@ const profileForm = useForm<Record<string, any>>({
 });
 
 const userName = computed(() => page.props.auth?.user?.name ?? 'John');
+const isSuperAdmin = computed(() => Boolean(props.isSuperAdmin));
 const isDashboard = computed(() => ['Dashboard Overview', 'Dashboard'].includes(props.screen));
 const shouldPollLiveData = computed(() => ['Dashboard Overview', 'Dashboard', 'Inbox / Live Chat', 'Contacts CRM'].includes(props.screen));
 const pageTitle = computed(() => props.screen.replace(' / Live Chat', ''));
 const pageSubtitle = computed(() => pageCopy[props.screen] ?? 'Manage this workspace module with responsive tools, filters, records and team-ready workflows.');
 const primaryAction = computed(() => actionCopy[props.screen] ?? 'Create New');
 const statIcons: Row = { messages: MessageSquare, ai: Bot, leads: UserPlus, rate: ShieldCheck };
-const statCards = computed(() => (props.dashboard?.stats ?? fallbackStats).map((stat: Row) => ({ ...stat, icon: statIcons[stat.key] ?? MessageSquare })));
+const statCards = computed(() => {
+  if (isSuperAdmin.value && platformStats.value.length) {
+    return platformStats.value.slice(0, 4).map((stat: Row, index: number) => ({
+      label: stat.label,
+      value: stat.value,
+      change: index === 3 ? 'real' : 'live',
+      key: ['messages', 'leads', 'ai', 'rate'][index] ?? 'messages',
+      icon: [Users, MessageSquare, ShieldCheck, UserPlus][index] ?? MessageSquare,
+    }));
+  }
+
+  return (props.dashboard?.stats ?? fallbackStats).map((stat: Row) => ({ ...stat, icon: statIcons[stat.key] ?? MessageSquare }));
+});
+const platformStats = computed(() => props.platform?.stats ?? []);
+const platformDetailStats = computed(() => platformStats.value.slice(4));
+const platformRevenueSeries = computed(() => props.platform?.revenueSeries ?? []);
+const platformPlanBreakdown = computed(() => props.platform?.planBreakdown ?? []);
+const platformExpiringSoon = computed(() => props.platform?.expiringSoon ?? []);
+const platformUsers = computed(() => props.platform?.users ?? []);
+const platformSubscriptions = computed(() => props.platform?.subscriptions ?? []);
+const platformRecentInvoices = computed(() => props.platform?.recentInvoices ?? []);
+const platformRevenueMax = computed(() => Math.max(1, ...platformRevenueSeries.value.map((row: Row) => Number(row.value ?? 0))));
+const platformRevenuePoints = computed(() => {
+  const rows = platformRevenueSeries.value;
+  const width = 680;
+  const left = 40;
+  const top = 36;
+  const height = 205;
+  const denominator = Math.max(1, rows.length - 1);
+
+  return rows.map((row: Row, index: number) => ({
+    x: left + (width / denominator) * index,
+    y: top + height - (Number(row.value ?? 0) / platformRevenueMax.value) * height,
+  }));
+});
+const platformRevenuePath = computed(() => chartPath(platformRevenuePoints.value));
+const platformRevenueLabels = computed(() => {
+  const points = platformRevenuePoints.value;
+  if (!points.length) return [];
+  const step = Math.max(1, Math.ceil(points.length / 5));
+
+  return points
+    .map((point: Row, index: number) => ({ x: point.x, text: platformRevenueSeries.value[index]?.label ?? '' }))
+    .filter((_, index: number) => index % step === 0 || index === points.length - 1);
+});
+const platformWorkspaces = computed(() => (props.platform?.workspaces ?? []).map((workspace: Row) => ({
+  ...workspace,
+  adminPlan: workspace.plan ?? 'starter',
+  adminStatus: workspace.subscription_status ?? 'expired',
+})));
+const filteredPlatformWorkspaces = computed(() => {
+  const query = platformSearch.value.trim().toLowerCase();
+  if (!query) return platformWorkspaces.value;
+
+  return platformWorkspaces.value.filter((workspace: Row) => JSON.stringify(workspace).toLowerCase().includes(query));
+});
 const totalMessages = computed(() => statCards.value[0]?.value ?? '12,458');
 const accountRows = computed(() => props.dashboard?.accounts ?? fallbackAccounts);
 const leadRows = computed(() => props.dashboard?.leads ?? fallbackLeads);
 const activityRows = computed(() => props.dashboard?.activities ?? fallbackActivities);
 const chatRows = computed(() => props.dashboard?.conversations ?? fallbackChats);
 const totalUnreadChats = computed(() => chatRows.value.reduce((sum: number, chat: Row) => sum + Number(chat.unread_count ?? 0), 0));
+const dashboardInboxFilters = [
+  { label: 'All', value: 'all' },
+  { label: 'Unread', value: 'unread' },
+  { label: 'Assigned', value: 'assigned' },
+  { label: 'Resolved', value: 'resolved' },
+];
+const dashboardEmptyFilterLabel = computed(() => dashboardInboxFilters.find((filter) => filter.value === dashboardInboxFilter.value)?.label ?? 'Selected');
+const dashboardEmptyTitle = computed(() => `${dashboardEmptyFilterLabel.value} record not found`);
+const dashboardEmptySubtitle = computed(() => {
+  if (dashboardInboxFilter.value === 'all') return 'No conversations are available yet.';
+  if (dashboardInboxFilter.value === 'unread') return 'No unread conversations are available right now.';
+  if (dashboardInboxFilter.value === 'assigned') return 'No assigned conversations are available right now.';
+  if (dashboardInboxFilter.value === 'resolved') return 'No resolved conversations are available right now.';
+  return 'Try another filter or add a new conversation.';
+});
+const filteredDashboardChats = computed(() => {
+  if (dashboardInboxFilter.value === 'unread') return chatRows.value.filter((chat: Row) => Number(chat.unread_count ?? 0) > 0);
+  if (dashboardInboxFilter.value === 'assigned') return chatRows.value.filter((chat: Row) => chat.assigned_to || chat.assignee_id || chat.status === 'assigned');
+  if (dashboardInboxFilter.value === 'resolved') return chatRows.value.filter((chat: Row) => ['resolved', 'closed'].includes(chat.status));
+  return chatRows.value;
+});
 const activeChat = computed(() => chatRows.value.find((chat: Row) => chat.id === selectedConversationId.value) ?? chatRows.value[0]);
 const messageRows = computed(() => {
   if (!props.dashboard?.messages) return [...fallbackMessages, ...localMessages.value];
@@ -648,7 +912,8 @@ const crmContacts = computed(() => props.module?.contacts ?? fallbackLeads);
 const crmNotes = computed(() => props.module?.notes ?? []);
 const billingPlans = computed(() => props.module?.paymentPlans ?? fallbackPlans);
 const invoiceRows = computed(() => props.module?.invoices ?? []);
-const currentSubscription = computed(() => props.module?.subscriptions?.[0] ?? null);
+const currentSubscription = computed(() => props.dashboard?.currentSubscription ?? props.module?.subscriptions?.[0] ?? null);
+const activeChatBlocked = computed(() => isBlocked(activeChat.value));
 const paymentGatewayLabel = computed(() => (props.module?.paymentGateway === 'stripe' ? 'Stripe secure checkout' : 'Demo checkout for local testing'));
 const phonePlaceholder = computed(() => `${moduleForm.country_code || '+92'} 300 0000000`);
 const firstAccount = computed(() => (props.module?.accounts?.[0] ?? props.dashboard?.accounts?.[0] ?? null));
@@ -659,6 +924,7 @@ const crmStages = [
   { key: 'interested', label: 'Interested' },
   { key: 'follow_up', label: 'Follow Up' },
   { key: 'won', label: 'Won' },
+  { key: 'blocked', label: 'Blocked' },
 ];
 const crmStats = computed(() => {
   const totalValue = crmContacts.value.reduce((sum: number, contact: Row) => sum + Number(contact.deal_value ?? contact.value ?? 0), 0);
@@ -714,6 +980,231 @@ const countryOptions = [
   { label: '🇹🇷 Turkey (+90)', value: '+90' },
   { label: '🇧🇩 Bangladesh (+880)', value: '+880' },
 ];
+const allCountryOptions = `
+Afghanistan|+93
+Albania|+355
+Algeria|+213
+American Samoa|+1684
+Andorra|+376
+Angola|+244
+Anguilla|+1264
+Antigua and Barbuda|+1268
+Argentina|+54
+Armenia|+374
+Aruba|+297
+Australia|+61
+Austria|+43
+Azerbaijan|+994
+Bahamas|+1242
+Bahrain|+973
+Bangladesh|+880
+Barbados|+1246
+Belarus|+375
+Belgium|+32
+Belize|+501
+Benin|+229
+Bermuda|+1441
+Bhutan|+975
+Bolivia|+591
+Bosnia and Herzegovina|+387
+Botswana|+267
+Brazil|+55
+British Virgin Islands|+1284
+Brunei|+673
+Bulgaria|+359
+Burkina Faso|+226
+Burundi|+257
+Cambodia|+855
+Cameroon|+237
+Canada|+1
+Cape Verde|+238
+Cayman Islands|+1345
+Central African Republic|+236
+Chad|+235
+Chile|+56
+China|+86
+Colombia|+57
+Comoros|+269
+Congo|+242
+Costa Rica|+506
+Croatia|+385
+Cuba|+53
+Curacao|+599
+Cyprus|+357
+Czech Republic|+420
+Denmark|+45
+Djibouti|+253
+Dominica|+1767
+Dominican Republic|+1809
+Ecuador|+593
+Egypt|+20
+El Salvador|+503
+Equatorial Guinea|+240
+Eritrea|+291
+Estonia|+372
+Eswatini|+268
+Ethiopia|+251
+Fiji|+679
+Finland|+358
+France|+33
+French Guiana|+594
+French Polynesia|+689
+Gabon|+241
+Gambia|+220
+Georgia|+995
+Germany|+49
+Ghana|+233
+Gibraltar|+350
+Greece|+30
+Greenland|+299
+Grenada|+1473
+Guadeloupe|+590
+Guam|+1671
+Guatemala|+502
+Guinea|+224
+Guinea-Bissau|+245
+Guyana|+592
+Haiti|+509
+Honduras|+504
+Hong Kong|+852
+Hungary|+36
+Iceland|+354
+India|+91
+Indonesia|+62
+Iran|+98
+Iraq|+964
+Ireland|+353
+Israel|+972
+Italy|+39
+Ivory Coast|+225
+Jamaica|+1876
+Japan|+81
+Jordan|+962
+Kazakhstan|+7
+Kenya|+254
+Kiribati|+686
+Kuwait|+965
+Kyrgyzstan|+996
+Laos|+856
+Latvia|+371
+Lebanon|+961
+Lesotho|+266
+Liberia|+231
+Libya|+218
+Liechtenstein|+423
+Lithuania|+370
+Luxembourg|+352
+Macau|+853
+Madagascar|+261
+Malawi|+265
+Malaysia|+60
+Maldives|+960
+Mali|+223
+Malta|+356
+Marshall Islands|+692
+Martinique|+596
+Mauritania|+222
+Mauritius|+230
+Mexico|+52
+Micronesia|+691
+Moldova|+373
+Monaco|+377
+Mongolia|+976
+Montenegro|+382
+Montserrat|+1664
+Morocco|+212
+Mozambique|+258
+Myanmar|+95
+Namibia|+264
+Nauru|+674
+Nepal|+977
+Netherlands|+31
+New Caledonia|+687
+New Zealand|+64
+Nicaragua|+505
+Niger|+227
+Nigeria|+234
+North Korea|+850
+North Macedonia|+389
+Northern Mariana Islands|+1670
+Norway|+47
+Oman|+968
+Pakistan|+92
+Palau|+680
+Palestine|+970
+Panama|+507
+Papua New Guinea|+675
+Paraguay|+595
+Peru|+51
+Philippines|+63
+Poland|+48
+Portugal|+351
+Puerto Rico|+1787
+Qatar|+974
+Reunion|+262
+Romania|+40
+Russia|+7
+Rwanda|+250
+Saint Kitts and Nevis|+1869
+Saint Lucia|+1758
+Saint Vincent and the Grenadines|+1784
+Samoa|+685
+San Marino|+378
+Sao Tome and Principe|+239
+Saudi Arabia|+966
+Senegal|+221
+Serbia|+381
+Seychelles|+248
+Sierra Leone|+232
+Singapore|+65
+Slovakia|+421
+Slovenia|+386
+Solomon Islands|+677
+Somalia|+252
+South Africa|+27
+South Korea|+82
+South Sudan|+211
+Spain|+34
+Sri Lanka|+94
+Sudan|+249
+Suriname|+597
+Sweden|+46
+Switzerland|+41
+Syria|+963
+Taiwan|+886
+Tajikistan|+992
+Tanzania|+255
+Thailand|+66
+Timor-Leste|+670
+Togo|+228
+Tonga|+676
+Trinidad and Tobago|+1868
+Tunisia|+216
+Turkey|+90
+Turkmenistan|+993
+Turks and Caicos Islands|+1649
+Tuvalu|+688
+Uganda|+256
+Ukraine|+380
+United Arab Emirates|+971
+United Kingdom|+44
+United States|+1
+Uruguay|+598
+Uzbekistan|+998
+Vanuatu|+678
+Vatican City|+379
+Venezuela|+58
+Vietnam|+84
+Yemen|+967
+Zambia|+260
+Zimbabwe|+263
+`
+  .trim()
+  .split('\n')
+  .map((row) => {
+    const [country, code] = row.split('|');
+    return { label: `${country} (${code})`, value: code };
+  });
 const whatsAppSetupFields = [
   { name: 'name', label: 'Account Name', placeholder: 'Main Business' },
   { name: 'phone_number', label: 'WhatsApp Number', placeholder: '+92 300 0000000' },
@@ -723,9 +1214,9 @@ const whatsAppSetupFields = [
 ];
 
 const moduleCards = computed(() => [
-  { title: `${pageTitle.value} Overview`, text: 'Monitor key records, recent updates and operational health from this module.', icon: MessageSquare },
-  { title: 'Smart Filters', text: 'Search, segment and prioritize records with fast workspace-level filtering.', icon: ShieldCheck },
-  { title: 'Automation Ready', text: 'Connect this module with AI replies, workflows, notifications and activity logs.', icon: Bot },
+  { title: `${pageTitle.value} Overview`, text: `${recordsForScreen().length} live records in this module. Latest data refreshes through dashboard polling.`, icon: MessageSquare, kind: 'overview' },
+  { title: 'Smart Filters', text: 'Search, segment and prioritize records with fast workspace-level filtering.', icon: ShieldCheck, kind: 'filters' },
+  { title: 'Automation Ready', text: 'Connect this module with AI replies, workflows, notifications and activity logs.', icon: Bot, kind: 'automation' },
 ]);
 
 const tableRows = computed(() => recordsForScreen().map((row: Row) => ({
@@ -736,6 +1227,12 @@ const tableRows = computed(() => recordsForScreen().map((row: Row) => ({
   updated: relativeTime(row.updated_at ?? row.created_at),
   raw: row,
 })));
+const filteredTableRows = computed(() => {
+  const query = recordsSearch.value.trim().toLowerCase();
+  if (!query) return tableRows.value;
+
+  return tableRows.value.filter((row: Row) => JSON.stringify(row.raw ?? row).toLowerCase().includes(query));
+});
 const recordDetailFields = computed(() => {
   if (!viewRecord.value) return [];
   const raw = viewRecord.value.raw ?? {};
@@ -802,7 +1299,7 @@ const formConfig: Row = {
     route: '/app/contacts',
     fields: [
       { name: 'name', label: 'Name', placeholder: 'Customer name' },
-      { name: 'country_code', label: 'Country', options: countryOptions },
+      { name: 'country_code', label: 'Country', options: allCountryOptions },
       { name: 'phone_number', label: 'Phone', placeholder: '+92 300 0000000' },
       { name: 'email', label: 'Email', type: 'email', placeholder: 'customer@email.com' },
       { name: 'status', label: 'Status', options: ['new_lead', 'interested', 'follow_up', 'won'] },
@@ -911,8 +1408,23 @@ function relativeTime(value?: string) {
   return `${Math.round(diff / 60)} hr ago`;
 }
 
+function dateTime(value?: string) {
+  if (!value) return 'Not set';
+  return new Date(value).toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 function money(value: number | string) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(value) || 0);
+}
+
+function isBlocked(row?: Row | null) {
+  return row?.status === 'blocked' || row?.contact_status === 'blocked';
 }
 
 function pipelineFor(status: string) {
@@ -931,6 +1443,18 @@ function moveContact(contact: Row, status: string) {
   stageForm.post(`/app/contacts/${contact.id}/stage`, { preserveScroll: true });
 }
 
+function toggleContactBlock(contact: Row) {
+  const contactId = contact.contact_id ?? contact.id;
+  if (!contactId) return;
+  const blocked = !isBlocked(contact);
+  if (!confirm(blocked ? 'Block this contact? New messages from this contact will be ignored.' : 'Unblock this contact?')) return;
+  router.post(`/app/contacts/${contactId}/block`, { blocked }, {
+    preserveScroll: true,
+    preserveState: true,
+    only: ['dashboard', 'module'],
+  });
+}
+
 function saveNote() {
   if (!noteForm.contact_id && crmContacts.value[0]?.id) noteForm.contact_id = crmContacts.value[0].id;
   if (!noteForm.contact_id) return;
@@ -943,6 +1467,16 @@ function saveNote() {
 function startCheckout(plan: string) {
   checkoutForm.plan = plan;
   checkoutForm.post('/app/billing/checkout', { preserveScroll: true });
+}
+
+function updateCustomerSubscription(workspace: Row) {
+  if (!workspace?.id) return;
+  adminSubscriptionForm.plan = workspace.adminPlan ?? workspace.plan ?? 'starter';
+  adminSubscriptionForm.status = workspace.adminStatus ?? workspace.subscription_status ?? 'active';
+  adminSubscriptionForm.post(`/app/admin/workspaces/${workspace.id}/subscription`, {
+    preserveScroll: true,
+    only: ['platform', 'dashboard'],
+  });
 }
 
 function selectAttachment(event: Event) {
@@ -967,6 +1501,7 @@ function openConversation(chat: Row) {
 
 function sendMessage() {
   if (!draft.value.trim() && !selectedAttachmentFile.value) return;
+  if (activeChatBlocked.value) return;
   if (!activeChat.value?.id) {
     localMessages.value.push({ id: `local-${Date.now()}`, direction: 'outbound', body: draft.value.trim() });
     draft.value = '';
@@ -1055,12 +1590,40 @@ function openRecord(row: Row) {
   viewRecord.value = row;
 }
 
+function openModuleCard(card: Row) {
+  if (card.kind === 'filters') {
+    recordsSearch.value = '';
+    document.querySelector<HTMLInputElement>('input[placeholder="Search records..."]')?.focus();
+    return;
+  }
+
+  openRecord({
+    key: `module-${card.kind}`,
+    name: card.title,
+    status: 'Live',
+    owner: userName.value,
+    updated: 'now',
+    raw: {
+      module: pageTitle.value,
+      records: recordsForScreen().length,
+      latest_record: recordsForScreen()[0] ?? null,
+      card: card.kind,
+    },
+  });
+}
+
 function closeRecord() {
   viewRecord.value = null;
 }
 
 function prettyRecord(row: Row) {
   return JSON.stringify(row ?? {}, null, 2);
+}
+
+function messageTickIcon(status?: string) {
+  if (status === 'failed') return '!';
+  if (status === 'delivered' || status === 'read') return '✓✓';
+  return '✓';
 }
 
 function messageStatusIcon(status?: string) {

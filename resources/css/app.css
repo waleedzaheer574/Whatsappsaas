@@ -91,6 +91,25 @@ button:disabled,
   @apply text-slate-400 dark:text-slate-500;
 }
 
+.dashboard-select {
+  @apply rounded-xl border border-slate-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 outline-none transition focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 dark:border-white/10 dark:bg-[#111a2f] dark:text-white;
+  color-scheme: light;
+}
+
+.dark .dashboard-select {
+  color-scheme: dark;
+}
+
+.dashboard-select option {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.dark .dashboard-select option {
+  background: #111a2f;
+  color: #ffffff;
+}
+
 select.form-control {
   color-scheme: light;
 }

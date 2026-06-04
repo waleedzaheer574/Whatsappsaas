@@ -38,6 +38,7 @@ Route::prefix('app')->middleware('auth')->name('dashboard.')->group(function () 
     Route::get('/billing/cancel', [PaymentController::class, 'cancel'])->name('billing.cancel');
     Route::post('/profile', [DashboardActionController::class, 'profile'])->name('profile.update');
     Route::post('/settings', [DashboardActionController::class, 'settings'])->name('settings.update');
+    Route::post('/admin/workspaces/{workspace}/subscription', [DashboardActionController::class, 'adminWorkspaceSubscription'])->name('admin.subscription.update');
 
     Route::middleware('subscribed')->group(function () {
         Route::get('/dashboard', [PageController::class, 'dashboard'])->name('overview');
@@ -54,6 +55,7 @@ Route::prefix('app')->middleware('auth')->name('dashboard.')->group(function () 
         Route::get('/activity', [PageController::class, 'dashboard'])->defaults('screen', 'Activity Logs')->name('activity');
         Route::post('/contacts', [DashboardActionController::class, 'contact'])->name('contacts.store');
         Route::post('/contacts/{contact}/stage', [DashboardActionController::class, 'contactStage'])->name('contacts.stage');
+        Route::post('/contacts/{contact}/block', [DashboardActionController::class, 'blockContact'])->name('contacts.block');
         Route::post('/contacts/{contact}/notes', [DashboardActionController::class, 'contactNote'])->name('contacts.notes');
         Route::delete('/contacts/{contact}', [DashboardActionController::class, 'deleteContact'])->name('contacts.destroy');
         Route::post('/conversations/{conversation}/messages', [DashboardActionController::class, 'message'])->name('conversations.messages.store');

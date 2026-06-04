@@ -25,6 +25,9 @@ class ProcessIncomingWebhookAction
     {
         $account = WhatsAppAccount::query()->findOrFail($data->whatsappAccountId);
         $contact = $this->contacts->upsertFromWhatsApp($account->workspace_id, $data->from, $data->name);
+        if ($contact->status === 'blocked') {
+            abort(423, 'This contact is blocked.');
+        }
         $conversation = $this->conversations->findOrCreateForContact($account, $contact);
 
         $message = Message::query()->create([

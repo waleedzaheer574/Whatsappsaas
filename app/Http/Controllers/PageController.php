@@ -78,6 +78,7 @@ class PageController extends Controller
                 ->select('workspaces.*'))
             ->first();
         $workspaceId = $workspace->id ?? 1;
+        $isSuperAdmin = $request->user()?->email === 'admin@chatflow.test';
         $chartPeriod = in_array($request->query('chart_period'), ['week', 'month', 'quarter'], true)
             ? $request->query('chart_period')
             : 'week';
@@ -209,6 +210,8 @@ class PageController extends Controller
         return Inertia::render('Dashboard/Workspace', [
             'screen' => $screen,
             'workspace' => $workspace,
+            'isSuperAdmin' => $isSuperAdmin,
+            'platform' => $isSuperAdmin ? $this->platformAdminData() : null,
             'dashboard' => [
                 'stats' => [
                     ['label' => 'Total Messages', 'value' => number_format($totalMessages), 'change' => '0', 'key' => 'messages'],
@@ -224,11 +227,12 @@ class PageController extends Controller
                 'unreadNotifications' => $unreadNotifications,
                 'notifications' => $notifications,
                 'subscriptionNotice' => $subscriptionNotice,
+                'currentSubscription' => $subscription,
                 'leads' => DB::table('contacts')->where('workspace_id', $workspaceId)->latest()->limit(4)->get(),
                 'conversations' => DB::table('conversations')
                     ->join('contacts', 'contacts.id', '=', 'conversations.contact_id')
                     ->where('conversations.workspace_id', $workspaceId)
-                    ->select('conversations.*', 'contacts.name', 'contacts.phone_number')
+                    ->select('conversations.*', 'contacts.name', 'contacts.phone_number', 'contacts.status as contact_status')
                     ->latest('conversations.last_message_at')
                     ->limit(6)
                     ->get(),
@@ -269,5 +273,99 @@ class PageController extends Controller
                 'accounts' => DB::table('whatsapp_accounts')->where('workspace_id', $workspaceId)->latest()->limit(20)->get(),
             ],
         ]);
+    }
+
+    private function platformAdminData(): array
+    {
+        $paidRevenue = (float) DB::table('invoices')
+            ->where('status', 'paid')
+            ->sum('amount_paid');
+        $monthlyRevenue = (float) DB::table('invoices')
+            ->where('status', 'paid')
+            ->where('paid_at', '>=', now()->startOfMonth())
+            ->sum('amount_paid');
+        $revenueRows = DB::table('invoices')
+            ->where('status', 'paid')
+            ->where('paid_at', '>=', now()->subDays(29)->startOfDay())
+            ->selectRaw('DATE(paid_at) as bucket, SUM(amount_paid) as total')
+            ->groupBy('bucket')
+            ->get()
+            ->keyBy('bucket');
+        $revenueSeries = collect(range(0, 29))->map(function (int $offset) use ($revenueRows) {
+            $date = now()->subDays(29 - $offset);
+
+            return [
+                'label' => $date->format('M j'),
+                'value' => (float) ($revenueRows->get($date->toDateString())?->total ?? 0),
+            ];
+        })->values();
+        $planBreakdown = DB::table('subscriptions')
+            ->selectRaw('plan, status, COUNT(*) as total')
+            ->groupBy('plan', 'status')
+            ->orderBy('plan')
+            ->get();
+
+        return [
+            'stats' => [
+                ['label' => 'Total Users', 'value' => number_format(DB::table('users')->count()), 'help' => 'Registered platform accounts'],
+                ['label' => 'Workspaces', 'value' => number_format(DB::table('workspaces')->count()), 'help' => 'Customer business accounts'],
+                ['label' => 'Active Subscriptions', 'value' => number_format(DB::table('subscriptions')->where('status', 'active')->count()), 'help' => 'Paying/unlocked customers'],
+                ['label' => 'Revenue', 'value' => '$'.number_format($paidRevenue, 0), 'help' => 'Total collected invoices'],
+                ['label' => 'This Month', 'value' => '$'.number_format($monthlyRevenue, 0), 'help' => 'Paid invoices this month'],
+            ],
+            'revenueSeries' => $revenueSeries,
+            'planBreakdown' => $planBreakdown,
+            'expiringSoon' => DB::table('subscriptions')
+                ->join('workspaces', 'workspaces.id', '=', 'subscriptions.workspace_id')
+                ->where('subscriptions.status', 'active')
+                ->whereBetween('subscriptions.renews_at', [now(), now()->addDays(7)])
+                ->select('subscriptions.plan', 'subscriptions.renews_at', 'workspaces.name as workspace_name')
+                ->orderBy('subscriptions.renews_at')
+                ->limit(10)
+                ->get(),
+            'workspaces' => DB::table('workspaces')
+                ->leftJoin('subscriptions', 'subscriptions.workspace_id', '=', 'workspaces.id')
+                ->leftJoin('workspace_user', function ($join) {
+                    $join->on('workspace_user.workspace_id', '=', 'workspaces.id')
+                        ->whereIn('workspace_user.role', ['owner', 'admin']);
+                })
+                ->leftJoin('users', 'users.id', '=', 'workspace_user.user_id')
+                ->select(
+                    'workspaces.id',
+                    'workspaces.name',
+                    'workspaces.slug',
+                    'workspaces.plan',
+                    'workspaces.created_at',
+                    'subscriptions.status as subscription_status',
+                    'subscriptions.renews_at',
+                    'subscriptions.limits',
+                    'users.name as owner_name',
+                    'users.email as owner_email',
+                )
+                ->latest('workspaces.created_at')
+                ->limit(30)
+                ->get()
+                ->unique('id')
+                ->values(),
+            'users' => DB::table('users')
+                ->leftJoin('workspace_user', 'workspace_user.user_id', '=', 'users.id')
+                ->leftJoin('workspaces', 'workspaces.id', '=', 'workspace_user.workspace_id')
+                ->select('users.id', 'users.name', 'users.email', 'users.created_at', 'workspace_user.role', 'workspaces.name as workspace_name')
+                ->latest('users.created_at')
+                ->limit(30)
+                ->get(),
+            'subscriptions' => DB::table('subscriptions')
+                ->join('workspaces', 'workspaces.id', '=', 'subscriptions.workspace_id')
+                ->select('subscriptions.*', 'workspaces.name as workspace_name')
+                ->latest('subscriptions.updated_at')
+                ->limit(30)
+                ->get(),
+            'recentInvoices' => DB::table('invoices')
+                ->join('workspaces', 'workspaces.id', '=', 'invoices.workspace_id')
+                ->select('invoices.id', 'invoices.number', 'invoices.amount_due', 'invoices.amount_paid', 'invoices.currency', 'invoices.status', 'invoices.paid_at', 'workspaces.name as workspace_name')
+                ->latest('invoices.created_at')
+                ->limit(12)
+                ->get(),
+        ];
     }
 }

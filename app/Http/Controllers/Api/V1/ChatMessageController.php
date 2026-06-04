@@ -36,10 +36,11 @@ class ChatMessageController extends Controller
         }
 
         $phoneNumber = $this->normalizePhone($data['phone_number']);
-        $contactId = DB::table('contacts')
+        $contactRecord = DB::table('contacts')
             ->where('workspace_id', $workspaceId)
             ->where('phone_number', $phoneNumber)
-            ->value('id');
+            ->first();
+        $contactId = $contactRecord?->id;
 
         if (! $contactId) {
             $contactId = DB::table('contacts')->insertGetId([
@@ -65,6 +66,13 @@ class ChatMessageController extends Controller
                 'updated_at' => now(),
             ]);
         } else {
+            if ($contactRecord->status === 'blocked') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This contact is blocked. Message was not stored.',
+                ], 423);
+            }
+
             DB::table('contacts')->where('id', $contactId)->update([
                 'name' => $data['name'],
                 'email' => $data['email'] ?? DB::raw('email'),

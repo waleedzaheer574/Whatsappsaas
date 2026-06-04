@@ -108,14 +108,29 @@ class DashboardActionController extends Controller
         $exists = DB::table('conversations')->where('id', $conversation)->where('workspace_id', $workspaceId)->exists();
 
         abort_unless($exists, 404);
+        $subscription = DB::table('subscriptions')->where('workspace_id', $workspaceId)->latest()->first();
+        $limits = json_decode($subscription->limits ?? '{}', true) ?: [];
+        $messageLimit = (int) ($limits['messages'] ?? 1000);
+        $usedMessages = DB::table('messages')
+            ->join('conversations', 'conversations.id', '=', 'messages.conversation_id')
+            ->where('conversations.workspace_id', $workspaceId)
+            ->where('messages.created_at', '>=', now()->startOfMonth())
+            ->count();
+
+        if ($usedMessages >= $messageLimit) {
+            return back()->with('error', "Your current plan allows {$messageLimit} messages per month. Please upgrade your subscription to send more.");
+        }
 
         $conversationRecord = DB::table('conversations')
             ->join('contacts', 'contacts.id', '=', 'conversations.contact_id')
             ->join('whatsapp_accounts', 'whatsapp_accounts.id', '=', 'conversations.whatsapp_account_id')
             ->where('conversations.id', $conversation)
             ->where('conversations.workspace_id', $workspaceId)
-            ->select('contacts.phone_number as contact_phone', 'whatsapp_accounts.settings as account_settings')
+            ->select('contacts.phone_number as contact_phone', 'contacts.status as contact_status', 'conversations.status as conversation_status', 'whatsapp_accounts.settings as account_settings')
             ->first();
+        if (($conversationRecord?->contact_status === 'blocked') || ($conversationRecord?->conversation_status === 'blocked')) {
+            return back()->with('error', 'This contact is blocked. Unblock the contact before sending a message.');
+        }
         $file = $request->file('attachment');
         if ($file) {
             $blocked = ['php', 'phtml', 'phar', 'exe', 'bat', 'cmd', 'com', 'scr', 'vbs', 'js', 'html', 'htm', 'sh', 'msi'];
@@ -301,9 +316,34 @@ class DashboardActionController extends Controller
         return back()->with('success', 'Contact and related chat deleted successfully.');
     }
 
+    public function blockContact(Request $request, int $contact): RedirectResponse
+    {
+        $workspaceId = $this->workspaceId($request);
+        $data = $request->validate([
+            'blocked' => ['required', 'boolean'],
+        ]);
+        $exists = DB::table('contacts')
+            ->where('id', $contact)
+            ->where('workspace_id', $workspaceId)
+            ->exists();
+
+        abort_unless($exists, 404);
+
+        DB::table('contacts')->where('id', $contact)->where('workspace_id', $workspaceId)->update([
+            'status' => $data['blocked'] ? 'blocked' : 'new_lead',
+            'updated_at' => now(),
+        ]);
+        DB::table('conversations')->where('contact_id', $contact)->where('workspace_id', $workspaceId)->update([
+            'status' => $data['blocked'] ? 'blocked' : 'open',
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', $data['blocked'] ? 'Contact blocked successfully.' : 'Contact unblocked successfully.');
+    }
+
     public function contactStage(Request $request, int $contact): RedirectResponse
     {
-        $data = $request->validate(['status' => ['required', 'in:new_lead,interested,follow_up,won,lost']]);
+        $data = $request->validate(['status' => ['required', 'in:new_lead,interested,follow_up,won,lost,blocked']]);
         $workspaceId = $this->workspaceId($request);
 
         DB::table('contacts')->where('id', $contact)->where('workspace_id', $workspaceId)->update([
@@ -415,6 +455,19 @@ class DashboardActionController extends Controller
             'access_token' => ['required', 'string', 'max:500'],
             'verify_token' => ['required', 'string', 'max:120'],
         ]);
+        $workspaceId = $this->workspaceId($request);
+        $subscription = DB::table('subscriptions')->where('workspace_id', $workspaceId)->latest()->first();
+        $limits = json_decode($subscription->limits ?? '{}', true) ?: [];
+        $accountLimit = (int) ($limits['whatsapp_accounts'] ?? 1);
+        $connectedAccounts = DB::table('whatsapp_accounts')
+            ->where('workspace_id', $workspaceId)
+            ->where('status', '!=', 'pending_setup')
+            ->count();
+
+        if ($connectedAccounts >= $accountLimit) {
+            return back()->with('error', "Your current plan allows {$accountLimit} WhatsApp account(s). Please upgrade your subscription to add more.");
+        }
+
         $settings = [
             'phone_number_id' => $data['phone_number_id'],
             'access_token' => $data['access_token'],
@@ -424,7 +477,7 @@ class DashboardActionController extends Controller
 
         DB::table('whatsapp_accounts')->insert([
             ...$data,
-            'workspace_id' => $this->workspaceId($request),
+            'workspace_id' => $workspaceId,
             'provider' => 'meta',
             'status' => 'connected',
             'quality_rating' => 'high',
@@ -536,5 +589,48 @@ class DashboardActionController extends Controller
         ]);
 
         return back()->with('success', 'Workspace settings saved.');
+    }
+
+    public function adminWorkspaceSubscription(Request $request, int $workspace): RedirectResponse
+    {
+        abort_unless($request->user()?->email === 'admin@chatflow.test', 403);
+
+        $data = $request->validate([
+            'plan' => ['required', 'in:starter,pro,agency'],
+            'status' => ['required', 'in:active,expired,canceled'],
+        ]);
+        $limits = [
+            'starter' => ['whatsapp_accounts' => 1, 'messages' => 1000, 'team_members' => 2],
+            'pro' => ['whatsapp_accounts' => 3, 'messages' => 10000, 'team_members' => 10],
+            'agency' => ['whatsapp_accounts' => 10, 'messages' => 100000, 'team_members' => 50],
+        ][$data['plan']];
+
+        DB::table('subscriptions')->updateOrInsert(
+            ['workspace_id' => $workspace],
+            [
+                'plan' => $data['plan'],
+                'status' => $data['status'],
+                'limits' => json_encode($limits),
+                'trial_ends_at' => null,
+                'renews_at' => $data['status'] === 'active' ? now()->addMonth() : null,
+                'ends_at' => $data['status'] === 'active' ? null : now(),
+                'updated_at' => now(),
+                'created_at' => now(),
+            ]
+        );
+        DB::table('workspaces')->where('id', $workspace)->update([
+            'plan' => $data['plan'],
+            'updated_at' => now(),
+        ]);
+        DB::table('activity_logs')->insert([
+            'workspace_id' => $workspace,
+            'type' => 'platform.subscription.updated',
+            'description' => 'Platform admin updated subscription to '.ucfirst($data['plan']).' / '.ucfirst($data['status']),
+            'properties' => json_encode(['admin_user_id' => $request->user()->id, 'plan' => $data['plan'], 'status' => $data['status']]),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'Customer subscription updated successfully.');
     }
 }
