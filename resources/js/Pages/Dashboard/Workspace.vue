@@ -137,11 +137,14 @@ Content-Type: application/json</pre>
               <h2>Live WhatsApp Inbox</h2>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Connect Meta WhatsApp Cloud API. Incoming customer messages will arrive through webhook automatically.</p>
             </div>
-            <span class="rounded-full bg-violet-100 px-4 py-2 text-xs font-black text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">{{ chatRows.length }} Conversations</span>
+            <div class="flex flex-wrap gap-2">
+              <span class="rounded-full bg-violet-100 px-4 py-2 text-xs font-black text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">{{ chatRows.length }} Conversations</span>
+              <span v-if="totalUnreadChats" class="rounded-full bg-emerald-100 px-4 py-2 text-xs font-black text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200">{{ totalUnreadChats }} Unread</span>
+            </div>
           </div>
 
-        <div class="mt-5 grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,420px)]">
-          <form class="grid gap-3 md:grid-cols-2 xl:grid-cols-3" @submit.prevent="submitModule">
+        <div class="mt-5 grid gap-4 rounded-[22px] border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-white/5 sm:rounded-3xl sm:p-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,420px)]">
+          <form class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" @submit.prevent="submitModule">
             <label v-for="field in whatsAppSetupFields" :key="field.name" class="grid gap-2 text-sm font-bold">
               <span>{{ field.label }}</span>
               <input v-model="moduleForm[field.name]" :type="field.type ?? 'text'" class="form-control" :placeholder="field.placeholder" />
@@ -151,21 +154,21 @@ Content-Type: application/json</pre>
               <button class="w-full rounded-2xl bg-violet-600 px-5 py-3 text-sm font-black text-white shadow-glow disabled:opacity-60" :disabled="moduleForm.processing">Connect WhatsApp</button>
             </div>
           </form>
-          <div class="rounded-2xl bg-white p-4 text-sm dark:bg-[#10182b]">
+          <div class="min-w-0 rounded-2xl bg-white p-4 text-sm dark:bg-[#10182b]">
             <h2>Webhook Setup</h2>
             <p class="mt-2 text-xs font-bold text-slate-500 dark:text-slate-400">Use this URL in Meta Webhooks for messages and status updates.</p>
-            <div class="mt-3 rounded-xl bg-slate-100 p-3 text-xs font-black text-slate-700 dark:bg-white/10 dark:text-slate-200">{{ activeWebhookUrl }}</div>
+            <div class="mt-3 overflow-x-auto rounded-xl bg-slate-100 p-3 text-xs font-black text-slate-700 dark:bg-white/10 dark:text-slate-200">{{ activeWebhookUrl }}</div>
             <p class="mt-3 text-xs text-slate-500">Verify token: use the same token you enter in the form.</p>
           </div>
         </div>
 
-        <div class="mt-5 grid h-[calc(100vh-330px)] min-h-[620px] max-h-[820px] overflow-hidden rounded-3xl border border-slate-200 bg-white dark:border-white/10 dark:bg-[#10182b] xl:grid-cols-[360px_minmax(0,1fr)]">
-          <aside class="flex min-h-0 min-w-0 flex-col border-slate-200 bg-slate-50/80 p-3 dark:border-white/10 dark:bg-white/5 xl:border-r">
+        <div class="mt-5 grid overflow-hidden rounded-[22px] border border-slate-200 bg-white dark:border-white/10 dark:bg-[#10182b] sm:rounded-3xl xl:h-[calc(100vh-330px)] xl:min-h-[620px] xl:max-h-[820px] xl:grid-cols-[360px_minmax(0,1fr)]">
+          <aside class="flex min-h-0 min-w-0 flex-col border-b border-slate-200 bg-slate-50/80 p-3 dark:border-white/10 dark:bg-white/5 xl:border-b-0 xl:border-r">
             <div class="mb-3 flex items-center gap-2 rounded-2xl bg-white px-3 py-2 dark:bg-white/8">
               <MessageSquare class="size-4 text-slate-400" />
               <input class="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-slate-400" placeholder="Search conversations..." />
             </div>
-            <div class="app-scrollbar min-h-0 flex-1 overflow-y-auto pr-1">
+            <div class="app-scrollbar max-h-56 min-h-0 flex-1 overflow-y-auto pr-1 xl:max-h-none">
               <div v-for="chat in chatRows" :key="chat.id ?? chat.name" :class="['mb-2 flex min-w-0 items-center gap-2 rounded-2xl p-2 transition', activeChat?.id === chat.id ? 'bg-violet-600 text-white shadow-glow' : 'bg-white hover:bg-violet-50 dark:bg-white/8 dark:hover:bg-white/12']">
                 <button type="button" class="flex min-w-0 flex-1 items-center gap-3 text-left" @click="openConversation(chat)">
                   <div class="grid size-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-amber-300 to-rose-500 font-black text-white">{{ initial(chat.name) }}</div>
@@ -186,19 +189,19 @@ Content-Type: application/json</pre>
             </div>
           </aside>
 
-          <section class="flex min-h-0 min-w-0 flex-col">
-            <div class="shrink-0 flex items-center gap-3 border-b border-slate-200 p-4 dark:border-white/10">
-              <div class="grid size-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-amber-300 to-rose-500 font-black text-white">{{ initial(activeChat?.name ?? 'C') }}</div>
+          <section class="flex min-h-[520px] min-w-0 flex-col xl:min-h-0">
+            <div class="shrink-0 flex items-center gap-2 border-b border-slate-200 p-3 dark:border-white/10 sm:gap-3 sm:p-4">
+              <div class="grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-amber-300 to-rose-500 font-black text-white sm:size-11">{{ initial(activeChat?.name ?? 'C') }}</div>
               <div class="min-w-0">
                 <p class="truncate text-sm font-black">{{ activeChat?.name ?? 'Select a conversation' }}</p>
                 <p class="truncate text-xs text-slate-500">{{ activeChat?.phone_number ?? 'Contact chat will show here' }}</p>
               </div>
-              <span v-if="activeChat" class="ml-auto rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">Open</span>
-              <button v-if="activeChat" class="rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-600 dark:bg-red-500/10" type="button" @click="deleteChat(activeChat.id)">Delete Chat</button>
+              <span v-if="activeChat" class="ml-auto hidden rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 sm:inline-flex">Open</span>
+              <button v-if="activeChat" class="rounded-xl bg-red-50 px-2 py-2 text-[11px] font-black text-red-600 dark:bg-red-500/10 sm:px-3 sm:text-xs" type="button" @click="deleteChat(activeChat.id)">Delete</button>
             </div>
 
-            <div ref="messagesPanel" class="app-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto p-4 text-sm">
-              <div v-for="message in messageRows" :key="message.id ?? message.body" :class="[message.direction === 'outbound' ? 'ml-auto bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white' : 'bg-slate-100 dark:bg-white/10', 'max-w-[86%] rounded-2xl p-3']">
+            <div ref="messagesPanel" class="app-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto p-3 text-sm sm:p-4">
+              <div v-for="message in messageRows" :key="message.id ?? message.body" :class="[message.direction === 'outbound' ? 'ml-auto bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white' : 'bg-slate-100 dark:bg-white/10', 'max-w-[92%] rounded-2xl p-3 sm:max-w-[86%]']">
                 <a v-if="message.media_path && isImage(message.media_mime_type)" :href="message.media_path" target="_blank" class="mb-2 block overflow-hidden rounded-xl bg-black/10">
                   <img :src="message.media_path" class="max-h-72 w-full object-cover" alt="message attachment" />
                 </a>
@@ -221,13 +224,13 @@ Content-Type: application/json</pre>
               </div>
             </div>
 
-            <div class="shrink-0 flex gap-2 border-t border-slate-200 p-3 dark:border-white/10">
-              <input v-model="draft" class="min-w-0 flex-1 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold outline-none dark:bg-white/10" :disabled="!activeChat" placeholder="Type a message..." @keyup.enter="sendMessage" />
-              <label class="grid size-12 shrink-0 cursor-pointer place-items-center rounded-2xl bg-slate-100 text-sm font-black text-slate-600 dark:bg-white/10 dark:text-white">
+            <div class="shrink-0 flex gap-2 border-t border-slate-200 p-2 dark:border-white/10 sm:p-3">
+              <input v-model="draft" class="min-w-0 flex-1 rounded-2xl bg-slate-100 px-3 py-3 text-sm font-semibold outline-none dark:bg-white/10 sm:px-4" :disabled="!activeChat" placeholder="Type a message..." @keyup.enter="sendMessage" />
+              <label class="grid size-11 shrink-0 cursor-pointer place-items-center rounded-2xl bg-slate-100 text-sm font-black text-slate-600 dark:bg-white/10 dark:text-white sm:size-12">
                 +
                 <input class="hidden" type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" @change="selectAttachment" />
               </label>
-              <button type="button" class="grid size-12 shrink-0 place-items-center rounded-2xl bg-violet-600 text-white disabled:opacity-50" :disabled="!activeChat || sendingMessage" @click.prevent="sendMessage"><Send class="size-5" /></button>
+              <button type="button" class="grid size-11 shrink-0 place-items-center rounded-2xl bg-violet-600 text-white disabled:opacity-50 sm:size-12" :disabled="!activeChat || sendingMessage" @click.prevent="sendMessage"><Send class="size-5" /></button>
             </div>
             <div v-if="selectedAttachmentName" class="shrink-0 border-t border-slate-200 px-4 py-2 text-xs font-bold text-slate-500 dark:border-white/10">
               Attached: {{ selectedAttachmentName }}
@@ -597,6 +600,7 @@ const accountRows = computed(() => props.dashboard?.accounts ?? fallbackAccounts
 const leadRows = computed(() => props.dashboard?.leads ?? fallbackLeads);
 const activityRows = computed(() => props.dashboard?.activities ?? fallbackActivities);
 const chatRows = computed(() => props.dashboard?.conversations ?? fallbackChats);
+const totalUnreadChats = computed(() => chatRows.value.reduce((sum: number, chat: Row) => sum + Number(chat.unread_count ?? 0), 0));
 const activeChat = computed(() => chatRows.value.find((chat: Row) => chat.id === selectedConversationId.value) ?? chatRows.value[0]);
 const messageRows = computed(() => {
   if (!props.dashboard?.messages) return [...fallbackMessages, ...localMessages.value];

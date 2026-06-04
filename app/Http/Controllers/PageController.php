@@ -86,6 +86,25 @@ class PageController extends Controller
             ->where('workspace_id', $workspaceId)
             ->latest('last_message_at')
             ->value('id') ?? 0;
+        $unreadNotifications = (int) DB::table('conversations')
+            ->where('workspace_id', $workspaceId)
+            ->sum('unread_count');
+        $notifications = DB::table('conversations')
+            ->join('contacts', 'contacts.id', '=', 'conversations.contact_id')
+            ->where('conversations.workspace_id', $workspaceId)
+            ->where('conversations.unread_count', '>', 0)
+            ->select('conversations.id', 'conversations.unread_count as count', 'conversations.last_message_at', 'contacts.name', 'contacts.phone_number')
+            ->latest('conversations.last_message_at')
+            ->limit(8)
+            ->get()
+            ->map(fn ($conversation) => [
+                'id' => $conversation->id,
+                'title' => $conversation->name,
+                'text' => $conversation->phone_number.' sent new message',
+                'count' => $conversation->count,
+                'initial' => strtoupper(substr($conversation->name ?? 'C', 0, 1)),
+                'created_at' => $conversation->last_message_at,
+            ]);
 
         $screen = $request->route('screen') ?? 'Dashboard Overview';
 
@@ -101,6 +120,8 @@ class PageController extends Controller
                 ],
                 'accounts' => DB::table('whatsapp_accounts')->where('workspace_id', $workspaceId)->latest()->limit(3)->get(),
                 'activities' => DB::table('activity_logs')->where('workspace_id', $workspaceId)->latest()->limit(5)->get(),
+                'unreadNotifications' => $unreadNotifications,
+                'notifications' => $notifications,
                 'leads' => DB::table('contacts')->where('workspace_id', $workspaceId)->latest()->limit(4)->get(),
                 'conversations' => DB::table('conversations')
                     ->join('contacts', 'contacts.id', '=', 'conversations.contact_id')
