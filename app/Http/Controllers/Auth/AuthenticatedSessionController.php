@@ -26,7 +26,7 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended('/app/dashboard');
+        return redirect()->intended('/app/dashboard')->with('success', 'Welcome back. You are logged in successfully.');
     }
 
     public function destroy(Request $request): RedirectResponse
@@ -35,6 +35,6 @@ class AuthenticatedSessionController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect('/auth/login');
+        return redirect('/auth/login')->with('success', 'You have been logged out successfully.');
     }
 }

@@ -39,15 +39,34 @@
             <Menu class="size-5" />
           </button>
 
-          <div class="hidden h-12 w-full max-w-xs items-center gap-3 rounded-2xl border border-white/80 bg-white/75 px-4 shadow-sm dark:border-white/10 dark:bg-white/10 md:flex">
-            <Search class="size-4 shrink-0 text-slate-400" />
-            <input class="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-slate-400" placeholder="Search anything..." />
-            <span class="rounded-lg bg-slate-100 px-2 py-1 text-xs font-black text-slate-500 dark:bg-white/10">Ctrl K</span>
+          <div ref="searchBox" class="relative hidden w-full max-w-xs md:block">
+            <div class="flex h-12 items-center gap-3 rounded-2xl border border-white/80 bg-white/75 px-4 shadow-sm dark:border-white/10 dark:bg-white/10">
+              <Search class="size-4 shrink-0 text-slate-400" />
+              <input
+                ref="searchInput"
+                v-model="searchQuery"
+                class="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-slate-400"
+                placeholder="Search anything..."
+                @focus="searchOpen = true"
+                @keydown.enter.prevent="goToSearchResult(searchResults[0])"
+                @keydown.esc="searchOpen = false"
+              />
+              <span class="rounded-lg bg-slate-100 px-2 py-1 text-xs font-black text-slate-500 dark:bg-white/10">Ctrl K</span>
+            </div>
+            <div v-if="searchOpen && searchResults.length" class="absolute left-0 top-14 z-50 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-glass dark:border-white/10 dark:bg-[#111a2f]">
+              <button v-for="result in searchResults" :key="result.href" class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold text-slate-700 hover:bg-violet-50 dark:text-slate-200 dark:hover:bg-white/10" type="button" @mousedown.prevent="goToSearchResult(result)">
+                <component :is="result.icon" class="size-4 shrink-0 text-violet-500" />
+                <div class="min-w-0">
+                  <p class="truncate">{{ result.label }}</p>
+                  <p class="truncate text-xs font-semibold text-slate-400">{{ result.hint }}</p>
+                </div>
+              </button>
+            </div>
           </div>
 
           <div class="ml-auto flex min-w-0 items-center gap-2">
             <ThemeToggle />
-            <div class="relative">
+            <div ref="notificationBox" class="relative">
               <button class="relative grid size-11 shrink-0 place-items-center rounded-2xl border border-white/80 bg-white/85 shadow-sm dark:border-white/10 dark:bg-white/10" type="button" @click="notificationOpen = !notificationOpen">
                 <Bell class="size-5" />
                 <span v-if="notificationCount" class="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-red-500 px-1.5 text-[10px] font-black text-white ring-2 ring-white dark:ring-[#070b1a]">{{ compactCount(notificationCount) }}</span>
@@ -73,7 +92,7 @@
                 </div>
               </div>
             </div>
-            <div class="relative hidden sm:block">
+            <div ref="profileBox" class="relative hidden sm:block">
               <button class="flex min-w-0 items-center gap-3 rounded-2xl border border-white/80 bg-white/85 px-3 py-2 shadow-sm dark:border-white/10 dark:bg-white/10" type="button" @click="profileOpen = !profileOpen">
               <div class="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-amber-300 to-pink-500 text-sm font-black text-white">{{ userInitial }}</div>
               <div class="min-w-0">
@@ -119,7 +138,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import { Bell, Bot, ChartSpline, ChevronDown, ChevronLeft, CreditCard, Database, Home, Inbox, KeyRound, LogOut, Menu, MoreVertical, Search, Send, Settings, UserCircle, Users, Workflow } from 'lucide-vue-next';
 import AppLogo from '@/Components/Ui/AppLogo.vue';
@@ -128,6 +147,12 @@ import ThemeToggle from '@/Components/Ui/ThemeToggle.vue';
 const open = ref(false);
 const profileOpen = ref(false);
 const notificationOpen = ref(false);
+const searchOpen = ref(false);
+const searchQuery = ref('');
+const searchInput = ref<HTMLInputElement | null>(null);
+const searchBox = ref<HTMLElement | null>(null);
+const notificationBox = ref<HTMLElement | null>(null);
+const profileBox = ref<HTMLElement | null>(null);
 const page = usePage();
 const user = computed(() => page.props.auth?.user ?? { name: 'John Doe', email: 'admin@chatflow.test' });
 const userInitial = computed(() => user.value.name?.charAt(0)?.toUpperCase() ?? 'J');
@@ -141,6 +166,19 @@ const notificationRows = computed(() => (dashboard.value?.notifications ?? []).m
   count: item.count ?? 0,
   initial: item.initial ?? 'C',
 })));
+const searchResults = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase();
+  const source = items.value.map((item) => ({
+    ...item,
+    hint: item.href.replace('/app/', 'Open '),
+  }));
+
+  if (!query) return source.slice(0, 6);
+
+  return source
+    .filter((item) => `${item.label} ${item.short} ${item.href}`.toLowerCase().includes(query))
+    .slice(0, 8);
+});
 
 const items = computed(() => [
   { label: 'Dashboard', short: 'Home', href: '/app/dashboard', icon: Home },
@@ -175,4 +213,39 @@ function logout() {
 function compactCount(count: number) {
   return count > 99 ? '99+' : String(count);
 }
+
+function goToSearchResult(result?: { href: string }) {
+  if (!result?.href) return;
+  searchOpen.value = false;
+  searchQuery.value = '';
+  router.visit(result.href);
+}
+
+function handleGlobalShortcut(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault();
+    searchOpen.value = true;
+    searchInput.value?.focus();
+  }
+}
+
+function handleOutsideClick(event: MouseEvent) {
+  const target = event.target as Node;
+  if (searchBox.value?.contains(target)) return;
+  if (notificationBox.value?.contains(target)) return;
+  if (profileBox.value?.contains(target)) return;
+  searchOpen.value = false;
+  notificationOpen.value = false;
+  profileOpen.value = false;
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleGlobalShortcut);
+  window.addEventListener('mousedown', handleOutsideClick);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleGlobalShortcut);
+  window.removeEventListener('mousedown', handleOutsideClick);
+});
 </script>

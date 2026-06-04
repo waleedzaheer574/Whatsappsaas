@@ -24,6 +24,23 @@ body {
   color: #020617;
 }
 
+button,
+a,
+label,
+select,
+summary,
+[role='button'],
+[type='button'],
+[type='submit'],
+[type='file'] {
+  cursor: pointer;
+}
+
+button:disabled,
+[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
 .dark body {
   background: #070B1A;
   color: #fff;
