@@ -418,7 +418,12 @@ Content-Type: application/json</pre>
                 <td><span class="rounded-full bg-violet-100 px-3 py-1 text-xs font-black text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">{{ row.status }}</span></td>
                 <td>{{ row.owner }}</td>
                 <td>{{ row.updated }}</td>
-                <td><button class="rounded-lg bg-slate-100 px-3 py-1 text-xs font-black transition hover:bg-violet-100 hover:text-violet-700 dark:bg-white/10 dark:hover:bg-violet-500/20 dark:hover:text-violet-200" type="button" @click="openRecord(row)">View</button></td>
+                <td>
+                  <div class="flex flex-wrap gap-2">
+                    <button class="rounded-lg bg-slate-100 px-3 py-1 text-xs font-black transition hover:bg-violet-100 hover:text-violet-700 dark:bg-white/10 dark:hover:bg-violet-500/20 dark:hover:text-violet-200" type="button" @click="openRecord(row)">View</button>
+                    <button v-if="screen === 'WhatsApp Accounts'" class="rounded-lg bg-red-50 px-3 py-1 text-xs font-black text-red-600 transition hover:bg-red-100 dark:bg-red-500/10 dark:text-red-200 dark:hover:bg-red-500/20" type="button" @click="deleteWhatsAppAccount(row.raw?.id)">Delete</button>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -1885,6 +1890,15 @@ function saveEditedMessage() {
 function deleteContact(contactId: number | string) {
   if (!contactId || !confirm('Delete this contact and related chat?')) return;
   router.delete(`/app/contacts/${contactId}`, { preserveScroll: true });
+}
+
+function deleteWhatsAppAccount(accountId?: number | string) {
+  if (!accountId || !confirm('Delete this WhatsApp account? Related chats for this account will also be removed.')) return;
+  router.delete(`/app/whatsapp-accounts/${accountId}`, {
+    preserveScroll: true,
+    preserveState: true,
+    only: ['dashboard', 'module', 'flash'],
+  });
 }
 
 function isImage(mime?: string) {

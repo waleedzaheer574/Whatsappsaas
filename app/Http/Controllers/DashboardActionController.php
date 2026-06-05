@@ -187,22 +187,52 @@ class DashboardActionController extends Controller
             $token = $settings['access_token'] ?? null;
             $phoneNumberId = $settings['phone_number_id'] ?? null;
             if ($token && $phoneNumberId) {
-                $response = Http::withToken($token)->post("https://graph.facebook.com/v20.0/{$phoneNumberId}/messages", [
-                    'messaging_product' => 'whatsapp',
-                    'to' => preg_replace('/\D+/', '', $conversationRecord->contact_phone),
-                    'type' => 'text',
-                    'text' => ['body' => $data['body']],
-                ]);
+                try {
+                    $response = Http::withToken($token)
+                        ->timeout(15)
+                        ->connectTimeout(10)
+                        ->withOptions(['proxy' => ''])
+                        ->post("https://graph.facebook.com/v20.0/{$phoneNumberId}/messages", [
+                            'messaging_product' => 'whatsapp',
+                            'to' => preg_replace('/\D+/', '', $conversationRecord->contact_phone),
+                            'type' => 'text',
+                            'text' => ['body' => $data['body']],
+                        ]);
 
-                DB::table('messages')->where('id', $messageId)->update([
-                    'status' => $response->successful() ? 'sent' : 'failed',
-                    'metadata' => json_encode([
-                        'provider' => 'meta',
-                        'provider_message_id' => $response->json('messages.0.id'),
-                        'error' => $response->successful() ? null : $response->json(),
-                    ]),
-                    'updated_at' => now(),
-                ]);
+                    DB::table('messages')->where('id', $messageId)->update([
+                        'status' => $response->successful() ? 'sent' : 'failed',
+                        'metadata' => json_encode([
+                            'provider' => 'meta',
+                            'provider_message_id' => $response->json('messages.0.id'),
+                            'error' => $response->successful() ? null : $response->json(),
+                        ]),
+                        'updated_at' => now(),
+                    ]);
+
+                    if (! $response->successful()) {
+                        DB::table('conversations')->where('id', $conversation)->update([
+                            'last_message_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+
+                        return back()->with('error', 'Message saved, but Meta WhatsApp rejected it. Check Phone Number ID, access token, recipient number and template/conversation window.');
+                    }
+                } catch (\Illuminate\Http\Client\ConnectionException $exception) {
+                    DB::table('messages')->where('id', $messageId)->update([
+                        'status' => 'failed',
+                        'metadata' => json_encode([
+                            'provider' => 'meta',
+                            'error' => $exception->getMessage(),
+                        ]),
+                        'updated_at' => now(),
+                    ]);
+                    DB::table('conversations')->where('id', $conversation)->update([
+                        'last_message_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                    return back()->with('error', 'Message saved, but Meta WhatsApp could not be reached. Check internet/proxy settings and try again.');
+                }
             }
         }
 
@@ -622,6 +652,41 @@ class DashboardActionController extends Controller
         ]);
 
         return back()->with('success', 'WhatsApp account connected.');
+    }
+
+    public function deleteWhatsAppAccount(Request $request, int $account): RedirectResponse
+    {
+        $workspaceId = $this->workspaceId($request);
+        $exists = DB::table('whatsapp_accounts')
+            ->where('id', $account)
+            ->where('workspace_id', $workspaceId)
+            ->exists();
+
+        abort_unless($exists, 404);
+
+        $mediaRows = DB::table('message_media')
+            ->join('messages', 'messages.id', '=', 'message_media.message_id')
+            ->join('conversations', 'conversations.id', '=', 'messages.conversation_id')
+            ->where('conversations.workspace_id', $workspaceId)
+            ->where('conversations.whatsapp_account_id', $account)
+            ->select('message_media.path')
+            ->get();
+
+        foreach ($mediaRows as $media) {
+            if ($media->path && str_starts_with($media->path, '/uploads/messages/')) {
+                $filePath = public_path(ltrim($media->path, '/'));
+                if (File::exists($filePath)) {
+                    File::delete($filePath);
+                }
+            }
+        }
+
+        DB::table('whatsapp_accounts')
+            ->where('id', $account)
+            ->where('workspace_id', $workspaceId)
+            ->delete();
+
+        return back()->with('success', 'WhatsApp account deleted successfully.');
     }
 
     public function automation(Request $request): RedirectResponse
