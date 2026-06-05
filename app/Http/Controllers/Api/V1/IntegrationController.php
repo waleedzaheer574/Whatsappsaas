@@ -13,13 +13,12 @@ class IntegrationController extends Controller
 
     public function index(Request $request)
     {
-        return $this->success(DB::table('connected_integrations')->where('workspace_id', $request->query('workspace_id', 1))->latest()->paginate(20));
+        return $this->success(DB::table('connected_integrations')->where('workspace_id', $request->attributes->get('workspace_id'))->latest()->paginate(20));
     }
 
     public function store(Request $request)
     {
         $data = $request->validate([
-            'workspace_id' => ['required', 'exists:workspaces,id'],
             'provider' => ['required', 'in:shopify,woocommerce,zapier,stripe,telegram,slack,google_sheets'],
             'status' => ['nullable', 'string'],
             'settings' => ['nullable', 'array'],
@@ -27,6 +26,7 @@ class IntegrationController extends Controller
 
         $id = DB::table('connected_integrations')->insertGetId([
             ...$data,
+            'workspace_id' => $request->attributes->get('workspace_id'),
             'settings' => json_encode($data['settings'] ?? []),
             'created_at' => now(),
             'updated_at' => now(),
@@ -35,25 +35,42 @@ class IntegrationController extends Controller
         return $this->success(DB::table('connected_integrations')->find($id), 'Integration connected successfully', status: 201);
     }
 
-    public function show(string $id)
+    public function show(Request $request, string $id)
     {
-        return $this->success(DB::table('connected_integrations')->find($id));
+        $record = DB::table('connected_integrations')
+            ->where('workspace_id', $request->attributes->get('workspace_id'))
+            ->where('id', $id)
+            ->first();
+
+        abort_unless($record, 404);
+
+        return $this->success($record);
     }
 
     public function update(Request $request, string $id)
     {
-        DB::table('connected_integrations')->where('id', $id)->update([
+        $updated = DB::table('connected_integrations')
+            ->where('workspace_id', $request->attributes->get('workspace_id'))
+            ->where('id', $id)
+            ->update([
             ...$request->only(['status']),
             'settings' => $request->has('settings') ? json_encode($request->input('settings')) : DB::raw('settings'),
             'updated_at' => now(),
         ]);
 
-        return $this->success(DB::table('connected_integrations')->find($id), 'Integration updated successfully');
+        abort_unless($updated, 404);
+
+        return $this->success(DB::table('connected_integrations')->where('workspace_id', $request->attributes->get('workspace_id'))->where('id', $id)->first(), 'Integration updated successfully');
     }
 
-    public function destroy(string $id)
+    public function destroy(Request $request, string $id)
     {
-        DB::table('connected_integrations')->where('id', $id)->delete();
+        $deleted = DB::table('connected_integrations')
+            ->where('workspace_id', $request->attributes->get('workspace_id'))
+            ->where('id', $id)
+            ->delete();
+
+        abort_unless($deleted, 404);
 
         return $this->success([], 'Integration disconnected successfully');
     }

@@ -17,16 +17,20 @@ class ConversationController extends Controller
 
     public function index(Request $request, ConversationRepository $conversations)
     {
-        return $this->success($conversations->listForWorkspace((int) $request->query('workspace_id', 1)));
+        return $this->success($conversations->listForWorkspace((int) $request->attributes->get('workspace_id')));
     }
 
-    public function show(Conversation $conversation)
+    public function show(Request $request, Conversation $conversation)
     {
+        abort_unless($conversation->workspace_id === (int) $request->attributes->get('workspace_id'), 404);
+
         return $this->success($conversation->load(['contact', 'whatsappAccount', 'messages']));
     }
 
     public function update(Request $request, Conversation $conversation)
     {
+        abort_unless($conversation->workspace_id === (int) $request->attributes->get('workspace_id'), 404);
+
         $conversation->update($request->validate([
             'status' => ['sometimes', 'in:open,pending,resolved,closed'],
             'priority' => ['sometimes', 'in:low,normal,high,urgent'],
@@ -39,6 +43,8 @@ class ConversationController extends Controller
 
     public function sendMessage(SendMessageRequest $request, Conversation $conversation, SendWhatsAppMessageAction $send)
     {
+        abort_unless($conversation->workspace_id === (int) $request->attributes->get('workspace_id'), 404);
+
         $message = $send->execute(new OutboundMessageData(
             conversationId: $conversation->id,
             body: $request->string('body')->toString(),

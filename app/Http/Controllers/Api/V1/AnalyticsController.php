@@ -13,6 +13,6 @@ class AnalyticsController extends Controller
 
     public function __invoke(Request $request, AnalyticsService $analytics)
     {
-        return $this->success($analytics->summary((int) $request->query('workspace_id', 1)), 'Analytics fetched successfully');
+        return $this->success($analytics->summary((int) $request->attributes->get('workspace_id')), 'Analytics fetched successfully');
     }
 }

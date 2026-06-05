@@ -21,7 +21,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('/whatsapp/{account}', [WhatsAppWebhookController::class, 'receive'])->name('whatsapp.receive');
     });
 
-    Route::middleware(['throttle:60,1'])->group(function () {
+    Route::middleware(['throttle:60,1', 'api.key'])->group(function () {
         Route::get('/dashboard', DashboardController::class)->name('dashboard');
         Route::apiResource('whatsapp-accounts', WhatsAppAccountController::class)->only(['index', 'store', 'show', 'update']);
         Route::apiResource('contacts', ContactController::class);
@@ -32,9 +32,6 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::apiResource('training-sources', TrainingSourceController::class);
         Route::apiResource('integrations', IntegrationController::class);
         Route::get('/analytics/summary', AnalyticsController::class)->name('analytics.summary');
-    });
-
-    Route::middleware(['throttle:60,1', 'api.key'])->group(function () {
         Route::post('/chats/messages', [ChatMessageController::class, 'store'])->name('chats.messages.store');
     });
 });

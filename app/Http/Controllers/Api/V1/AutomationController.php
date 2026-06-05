@@ -13,29 +13,32 @@ class AutomationController extends Controller
 
     public function index(Request $request)
     {
-        return $this->success(AiAutomation::query()->where('workspace_id', $request->query('workspace_id', 1))->latest()->paginate(20));
+        return $this->success(AiAutomation::query()->where('workspace_id', $request->attributes->get('workspace_id'))->latest()->paginate(20));
     }
 
     public function store(Request $request)
     {
         $automation = AiAutomation::query()->create($request->validate([
-            'workspace_id' => ['required', 'exists:workspaces,id'],
             'name' => ['required', 'string', 'max:255'],
             'trigger' => ['required', 'string', 'max:255'],
             'status' => ['nullable', 'in:active,paused,draft'],
             'flow' => ['nullable', 'array'],
-        ]));
+        ]) + ['workspace_id' => $request->attributes->get('workspace_id')]);
 
         return $this->success($automation, 'Automation created successfully', status: 201);
     }
 
-    public function show(AiAutomation $automation)
+    public function show(Request $request, AiAutomation $automation)
     {
+        abort_unless($automation->workspace_id === (int) $request->attributes->get('workspace_id'), 404);
+
         return $this->success($automation);
     }
 
     public function update(Request $request, AiAutomation $automation)
     {
+        abort_unless($automation->workspace_id === (int) $request->attributes->get('workspace_id'), 404);
+
         $automation->update($request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'trigger' => ['sometimes', 'string', 'max:255'],
@@ -46,8 +49,10 @@ class AutomationController extends Controller
         return $this->success($automation->fresh(), 'Automation updated successfully');
     }
 
-    public function destroy(AiAutomation $automation)
+    public function destroy(Request $request, AiAutomation $automation)
     {
+        abort_unless($automation->workspace_id === (int) $request->attributes->get('workspace_id'), 404);
+
         $automation->delete();
 
         return $this->success([], 'Automation deleted successfully');

@@ -13,29 +13,35 @@ class WhatsAppAccountController extends Controller
 
     public function index(Request $request)
     {
-        return $this->success(WhatsAppAccount::query()->where('workspace_id', $request->query('workspace_id', 1))->latest()->get());
+        return $this->success(WhatsAppAccount::query()->where('workspace_id', $request->attributes->get('workspace_id'))->latest()->get());
     }
 
     public function store(Request $request)
     {
         $data = $request->validate([
-            'workspace_id' => ['required', 'exists:workspaces,id'],
             'name' => ['required', 'string', 'max:255'],
             'phone_number' => ['required', 'string', 'max:40'],
             'provider' => ['nullable', 'string', 'max:60'],
             'settings' => ['nullable', 'array'],
         ]);
 
-        return $this->success(WhatsAppAccount::query()->create($data), 'WhatsApp account connected successfully', status: 201);
+        return $this->success(WhatsAppAccount::query()->create([
+            ...$data,
+            'workspace_id' => $request->attributes->get('workspace_id'),
+        ]), 'WhatsApp account connected successfully', status: 201);
     }
 
-    public function show(WhatsAppAccount $whatsappAccount)
+    public function show(Request $request, WhatsAppAccount $whatsappAccount)
     {
+        abort_unless($whatsappAccount->workspace_id === (int) $request->attributes->get('workspace_id'), 404);
+
         return $this->success($whatsappAccount->load('conversations.contact'));
     }
 
     public function update(Request $request, WhatsAppAccount $whatsappAccount)
     {
+        abort_unless($whatsappAccount->workspace_id === (int) $request->attributes->get('workspace_id'), 404);
+
         $whatsappAccount->update($request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'status' => ['sometimes', 'string', 'max:60'],

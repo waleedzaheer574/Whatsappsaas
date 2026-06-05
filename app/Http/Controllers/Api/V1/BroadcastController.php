@@ -13,36 +13,41 @@ class BroadcastController extends Controller
 
     public function index(Request $request)
     {
-        return $this->success(BroadcastCampaign::query()->where('workspace_id', $request->query('workspace_id', 1))->latest()->paginate(20));
+        return $this->success(BroadcastCampaign::query()->where('workspace_id', $request->attributes->get('workspace_id'))->latest()->paginate(20));
     }
 
     public function store(Request $request)
     {
         $campaign = BroadcastCampaign::query()->create($request->validate([
-            'workspace_id' => ['required', 'exists:workspaces,id'],
             'name' => ['required', 'string', 'max:255'],
             'status' => ['nullable', 'string', 'max:60'],
             'audience_count' => ['nullable', 'integer', 'min:0'],
             'scheduled_at' => ['nullable', 'date'],
-        ]));
+        ]) + ['workspace_id' => $request->attributes->get('workspace_id')]);
 
         return $this->success($campaign, 'Broadcast campaign created successfully', status: 201);
     }
 
-    public function show(BroadcastCampaign $broadcast)
+    public function show(Request $request, BroadcastCampaign $broadcast)
     {
+        abort_unless($broadcast->workspace_id === (int) $request->attributes->get('workspace_id'), 404);
+
         return $this->success($broadcast);
     }
 
     public function update(Request $request, BroadcastCampaign $broadcast)
     {
+        abort_unless($broadcast->workspace_id === (int) $request->attributes->get('workspace_id'), 404);
+
         $broadcast->update($request->only(['name', 'status', 'audience_count', 'scheduled_at']));
 
         return $this->success($broadcast->fresh(), 'Broadcast campaign updated successfully');
     }
 
-    public function destroy(BroadcastCampaign $broadcast)
+    public function destroy(Request $request, BroadcastCampaign $broadcast)
     {
+        abort_unless($broadcast->workspace_id === (int) $request->attributes->get('workspace_id'), 404);
+
         $broadcast->delete();
 
         return $this->success([], 'Broadcast campaign deleted successfully');

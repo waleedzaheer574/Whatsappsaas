@@ -13,7 +13,7 @@ class DashboardController extends Controller
 
     public function __invoke(Request $request, AnalyticsService $analytics)
     {
-        $workspaceId = (int) $request->query('workspace_id', 1);
+        $workspaceId = (int) $request->attributes->get('workspace_id');
 
         return $this->success($analytics->summary($workspaceId), 'Dashboard summary fetched successfully');
     }

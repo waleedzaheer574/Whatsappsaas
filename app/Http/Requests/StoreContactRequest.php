@@ -9,7 +9,7 @@ class StoreContactRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'workspace_id' => ['required', 'integer', 'exists:workspaces,id'],
+            'workspace_id' => ['nullable', 'integer', 'exists:workspaces,id'],
             'name' => ['required', 'string', 'max:255'],
             'phone_number' => ['required', 'string', 'max:40'],
             'email' => ['nullable', 'email'],
