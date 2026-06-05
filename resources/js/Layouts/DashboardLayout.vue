@@ -12,11 +12,11 @@
         </div>
 
         <nav class="app-scrollbar space-y-1 overflow-y-auto pr-1">
-          <a v-for="item in items" :key="item.href" :href="item.href" :class="['flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-bold transition', isActive(item.href) ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-glow' : 'text-slate-700 hover:bg-violet-50 dark:text-slate-300 dark:hover:bg-white/10']">
+          <Link v-for="item in items" :key="item.href" :href="item.href" :class="['flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-bold transition', isActive(item.href) ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-glow' : 'text-slate-700 hover:bg-violet-50 dark:text-slate-300 dark:hover:bg-white/10']">
             <component :is="item.icon" class="size-4 shrink-0" />
             <span class="truncate">{{ item.label }}</span>
             <span v-if="item.badge" class="ml-auto rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-700 dark:bg-violet-500 dark:text-white">{{ item.badge }}</span>
-          </a>
+          </Link>
         </nav>
 
         <div class="mt-auto rounded-2xl bg-slate-100 p-3 dark:bg-white/10">
@@ -80,14 +80,14 @@
                   <span class="rounded-full bg-violet-100 px-2 py-1 text-xs font-black text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">{{ compactCount(notificationCount) }}</span>
                 </div>
                 <div class="app-scrollbar max-h-80 overflow-y-auto p-2">
-                  <a v-for="alert in notificationRows" :key="alert.id" href="/app/inbox" class="mb-2 flex gap-3 rounded-2xl bg-slate-50 p-3 text-left hover:bg-violet-50 dark:bg-white/[.06] dark:hover:bg-white/10" @click="notificationOpen = false">
+                  <Link v-for="alert in notificationRows" :key="alert.id" href="/app/inbox" class="mb-2 flex gap-3 rounded-2xl bg-slate-50 p-3 text-left hover:bg-violet-50 dark:bg-white/[.06] dark:hover:bg-white/10" @click="notificationOpen = false">
                     <div class="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-amber-300 to-rose-500 text-xs font-black text-white">{{ alert.initial }}</div>
                     <div class="min-w-0">
                       <p class="truncate text-sm font-black">{{ alert.title }}</p>
                       <p class="truncate text-xs text-slate-500 dark:text-slate-400">{{ alert.text }}</p>
                     </div>
                     <span v-if="alert.count" class="ml-auto self-start rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-black text-white">{{ alert.count }}</span>
-                  </a>
+                  </Link>
                   <p v-if="!notificationRows.length" class="rounded-2xl border border-dashed border-slate-200 p-4 text-center text-sm font-bold text-slate-400 dark:border-white/10">No new notifications.</p>
                 </div>
               </div>
@@ -106,10 +106,10 @@
                   <p class="truncate text-sm font-black">{{ user.name }}</p>
                   <p class="truncate text-xs text-slate-500 dark:text-slate-400">{{ user.email }}</p>
                 </div>
-                <a v-for="link in profileLinks" :key="link.href" :href="link.href" class="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-bold text-slate-700 hover:bg-violet-50 dark:text-slate-200 dark:hover:bg-white/10" @click="profileOpen = false">
+                <Link v-for="link in profileLinks" :key="link.href" :href="link.href" class="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-bold text-slate-700 hover:bg-violet-50 dark:text-slate-200 dark:hover:bg-white/10" @click="profileOpen = false">
                   <component :is="link.icon" class="size-4" />
                   {{ link.label }}
-                </a>
+                </Link>
                 <button class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10" type="button" @click="logout">
                   <LogOut class="size-4" />
                   Logout
@@ -125,13 +125,13 @@
       </main>
 
       <nav class="fixed inset-x-3 bottom-3 z-50 grid grid-cols-5 rounded-[22px] border border-white/20 bg-[#10182b]/95 p-2 text-white shadow-glow backdrop-blur-xl lg:hidden">
-        <a v-for="item in items.slice(0, 5)" :key="item.href" :href="item.href" :class="['grid place-items-center gap-1 rounded-2xl py-2 text-[11px] font-bold', isActive(item.href) ? 'bg-violet-600 text-white' : 'text-white/65']">
+        <Link v-for="item in items.slice(0, 5)" :key="item.href" :href="item.href" :class="['grid place-items-center gap-1 rounded-2xl py-2 text-[11px] font-bold', isActive(item.href) ? 'bg-violet-600 text-white' : 'text-white/65']">
           <span class="relative">
             <component :is="item.icon" class="size-5" />
             <span v-if="item.badge" class="absolute -right-3 -top-2 grid min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[9px] font-black text-white">{{ item.badge }}</span>
           </span>
           <span>{{ item.short }}</span>
-        </a>
+        </Link>
       </nav>
     </div>
   </div>
@@ -139,7 +139,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { router, usePage } from '@inertiajs/vue3';
+import { Link, router, usePage } from '@inertiajs/vue3';
 import { Bell, Bot, ChartSpline, ChevronDown, ChevronLeft, CreditCard, Database, Home, Inbox, KeyRound, LogOut, Menu, MoreVertical, Search, Send, Settings, UserCircle, Users, Workflow } from 'lucide-vue-next';
 import AppLogo from '@/Components/Ui/AppLogo.vue';
 import ThemeToggle from '@/Components/Ui/ThemeToggle.vue';
