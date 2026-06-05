@@ -207,7 +207,15 @@ class PageController extends Controller
 
         $screen = $request->route('screen') ?? 'Dashboard Overview';
 
-        return Inertia::render('Dashboard/Workspace', [
+        $component = match($screen) {
+            'Inbox / Live Chat' => 'Dashboard/Inbox',
+            'Contacts CRM' => 'Dashboard/Contacts',
+            'AI Automations' => 'Dashboard/Automations',
+            'Broadcast Campaigns' => 'Dashboard/Broadcasts',
+            default => 'Dashboard/Overview',
+        };
+
+        return Inertia::render($component, [
             'screen' => $screen,
             'workspace' => $workspace,
             'isSuperAdmin' => $isSuperAdmin,
