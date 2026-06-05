@@ -9,14 +9,16 @@ class ContactRepository
     public function upsertFromWhatsApp(int $workspaceId, string $phone, string $name): Contact
     {
         $phone = $this->normalizePhone($phone);
+        $digits = preg_replace('/\D+/', '', $phone);
         $existing = Contact::query()
             ->where('workspace_id', $workspaceId)
-            ->where('phone_number', $phone)
+            ->whereRaw("REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone_number, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE ?", ['%'.$digits])
             ->first();
 
         if ($existing) {
             $existing->update([
-                'name' => $name ?: $phone,
+                'name' => $existing->name ?: ($name ?: $phone),
+                'phone_number' => $phone,
                 'source' => 'whatsapp',
             ]);
 
