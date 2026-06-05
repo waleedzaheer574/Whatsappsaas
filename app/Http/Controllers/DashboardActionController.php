@@ -325,10 +325,6 @@ class DashboardActionController extends Controller
             return back()->with('error', 'Only your sent messages can be edited.');
         }
 
-        if (\Illuminate\Support\Carbon::parse($record->created_at)->lt(now()->subMinutes(5))) {
-            return back()->with('error', 'Message edit time expired. You can edit messages within 5 minutes only.');
-        }
-
         $metadata = json_decode($record->metadata ?? '{}', true) ?: [];
         $metadata['edited'] = true;
         $metadata['edited_at'] = now()->toIso8601String();

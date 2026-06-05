@@ -232,8 +232,7 @@ Content-Type: application/json</pre>
                 <p>{{ message.body }}</p>
                 <div class="mt-1 flex flex-wrap items-center justify-end gap-2 text-[10px]">
                   <span class="text-slate-500 dark:text-slate-300">{{ shortTime(message.sent_at ?? message.created_at) }}</span>
-                  <button v-if="canEditMessage(message)" class="rounded-md bg-violet-500/10 px-2 py-0.5 font-black text-violet-500 opacity-0 transition hover:bg-violet-500/15 group-hover:opacity-100 focus:opacity-100" type="button" @click="startEditMessage(message)">Edit</button>
-                  <span v-if="isEditedMessage(message)" class="font-black text-slate-400 dark:text-slate-300">Edited</span>
+                  <button v-if="canEditMessage(message)" class="rounded-md bg-violet-500/10 px-2 py-0.5 font-black text-violet-500 transition hover:bg-violet-500/15" type="button" @click="startEditMessage(message)">Edit</button>
                   <span class="font-black uppercase text-slate-400 dark:text-slate-300">{{ cleanStatus(message.status) }}</span>
                   <span :class="message.direction === 'outbound' ? messageStatusClass(message.status) : 'font-black text-slate-400 dark:text-slate-500'">{{ messageTickIcon(message.status) }}</span>
                 </div>
@@ -778,8 +777,7 @@ Content-Type: application/json</pre>
                 <p>{{ message.body }}</p>
                 <div class="mt-2 flex flex-wrap items-center justify-end gap-2 text-[10px]">
                   <span :class="message.direction === 'outbound' ? 'text-white/70' : 'text-slate-500 dark:text-slate-400'">{{ shortTime(message.sent_at ?? message.created_at) }}</span>
-                  <button v-if="canEditMessage(message)" class="rounded-md bg-violet-500/10 px-2 py-0.5 font-black text-violet-500 opacity-0 transition hover:bg-violet-500/15 group-hover:opacity-100 focus:opacity-100" type="button" @click="startEditMessage(message)">Edit</button>
-                  <span v-if="isEditedMessage(message)" class="font-black text-slate-400 dark:text-slate-300">Edited</span>
+                  <button v-if="canEditMessage(message)" class="rounded-md bg-violet-500/10 px-2 py-0.5 font-black text-violet-500 transition hover:bg-violet-500/15" type="button" @click="startEditMessage(message)">Edit</button>
                   <span class="font-black uppercase">{{ cleanStatus(message.status) }}</span>
                   <span :class="message.direction === 'outbound' ? messageStatusClass(message.status) : 'font-black text-slate-400 dark:text-slate-500'">{{ messageTickIcon(message.status) }}</span>
                 </div>
@@ -1843,24 +1841,11 @@ function deleteMessage(messageId: number | string) {
 }
 
 function canEditMessage(message: Row) {
-  if (!message?.id || message.direction !== 'outbound') return false;
-  const createdAt = message.created_at || message.sent_at ? parseAppDate(message.created_at ?? message.sent_at).getTime() : Date.now();
-  return Date.now() - createdAt <= 5 * 60 * 1000;
-}
-
-function isEditedMessage(message: Row) {
-  try {
-    return Boolean(JSON.parse(message.metadata ?? '{}')?.edited);
-  } catch {
-    return false;
-  }
+  return Boolean(message?.id && message.direction === 'outbound');
 }
 
 function startEditMessage(message: Row) {
-  if (!canEditMessage(message)) {
-    alert('Edit time expired. You can edit your sent messages within 5 minutes only.');
-    return;
-  }
+  if (!canEditMessage(message)) return;
   editingMessageId.value = message.id;
   editingMessageBody.value = message.body ?? '';
   draft.value = message.body ?? '';
