@@ -367,9 +367,10 @@ Content-Type: application/json</pre>
       <section v-if="formFields.length" class="dash-card">
         <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div>
-            <h2>{{ primaryAction }}</h2>
+            <h2>{{ screen === 'WhatsApp Accounts' && editingWhatsAppAccountId ? 'Update WhatsApp Account' : primaryAction }}</h2>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Fill this form and save directly into the `whatsapp` database.</p>
           </div>
+          <button v-if="screen === 'WhatsApp Accounts' && editingWhatsAppAccountId" class="rounded-xl bg-slate-100 px-4 py-2 text-xs font-black text-slate-700 hover:bg-violet-100 hover:text-violet-700 dark:bg-white/10 dark:text-slate-200 dark:hover:bg-white/15" type="button" @click="cancelWhatsAppAccountEdit">Cancel Edit</button>
         </div>
         <div v-if="screen === 'Subscription Billing' && !recordsForScreen().length" class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
           Your account is created, but CRM access is locked until a subscription is active. Choose a plan below to unlock the dashboard, contacts, inbox, automations and team tools.
@@ -384,7 +385,7 @@ Content-Type: application/json</pre>
             <span v-if="moduleForm.errors[field.name]" class="text-xs text-red-500">{{ moduleForm.errors[field.name] }}</span>
           </label>
           <div class="flex items-end">
-            <button class="w-full rounded-2xl bg-violet-600 px-5 py-3 text-sm font-black text-white shadow-glow disabled:opacity-60" :disabled="moduleForm.processing">{{ primaryAction }}</button>
+            <button class="w-full rounded-2xl bg-violet-600 px-5 py-3 text-sm font-black text-white shadow-glow disabled:opacity-60" :disabled="moduleForm.processing">{{ screen === 'WhatsApp Accounts' && editingWhatsAppAccountId ? 'Update WhatsApp' : primaryAction }}</button>
           </div>
         </form>
         <div v-if="screen === 'WhatsApp Accounts'" class="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -420,6 +421,7 @@ Content-Type: application/json</pre>
                 <td>{{ row.updated }}</td>
                 <td>
                   <div class="flex flex-wrap gap-2">
+                    <button v-if="screen === 'WhatsApp Accounts'" class="rounded-lg bg-violet-50 px-3 py-1 text-xs font-black text-violet-700 transition hover:bg-violet-100 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20" type="button" @click="editWhatsAppAccount(row.raw)">Edit</button>
                     <button class="rounded-lg bg-slate-100 px-3 py-1 text-xs font-black transition hover:bg-violet-100 hover:text-violet-700 dark:bg-white/10 dark:hover:bg-violet-500/20 dark:hover:text-violet-200" type="button" @click="openRecord(row)">View</button>
                     <button v-if="screen === 'WhatsApp Accounts'" class="rounded-lg bg-red-50 px-3 py-1 text-xs font-black text-red-600 transition hover:bg-red-100 dark:bg-red-500/10 dark:text-red-200 dark:hover:bg-red-500/20" type="button" @click="deleteWhatsAppAccount(row.raw?.id)">Delete</button>
                   </div>
@@ -948,6 +950,7 @@ const contactProfileOpen = ref(false);
 const activeProfileContactId = ref<number | string | null>(null);
 const editingMessageId = ref<number | string | null>(null);
 const editingMessageBody = ref('');
+const editingWhatsAppAccountId = ref<number | string | null>(null);
 const chatMenuId = ref<number | string | null>(null);
 const activeChatMenuOpen = ref(false);
 let liveDataPoller: ReturnType<typeof window.setInterval> | null = null;
@@ -1568,7 +1571,7 @@ const formConfig: Row = {
       { name: 'name', label: 'WhatsApp Account', placeholder: 'Main Business' },
       { name: 'phone_number', label: 'Phone Number', placeholder: '+92 300 0000000' },
       { name: 'phone_number_id', label: 'Phone Number ID', placeholder: 'Meta phone number ID' },
-      { name: 'access_token', label: 'Access Token', placeholder: 'Meta token' },
+      { name: 'access_token', label: 'Access Token', placeholder: 'Paste fresh Meta token', type: 'password' },
       { name: 'verify_token', label: 'Verify Token', placeholder: 'chatflow_verify_token' },
     ],
     defaults: { verify_token: 'chatflow_verify_token' },
@@ -1901,6 +1904,35 @@ function deleteWhatsAppAccount(accountId?: number | string) {
   });
 }
 
+function editWhatsAppAccount(account: Row) {
+  if (!account?.id) return;
+  const settings = parseJsonObject(account.settings);
+  editingWhatsAppAccountId.value = account.id;
+  moduleForm.clearErrors();
+  moduleForm.name = account.name ?? '';
+  moduleForm.phone_number = account.phone_number ?? '';
+  moduleForm.phone_number_id = settings.phone_number_id ?? '';
+  moduleForm.access_token = '';
+  moduleForm.verify_token = settings.verify_token ?? 'chatflow_verify_token';
+  document.querySelector('form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function cancelWhatsAppAccountEdit() {
+  editingWhatsAppAccountId.value = null;
+  moduleForm.reset();
+  moduleForm.verify_token = 'chatflow_verify_token';
+}
+
+function parseJsonObject(value: unknown): Row {
+  if (!value) return {};
+  if (typeof value === 'object') return value as Row;
+  try {
+    return JSON.parse(String(value));
+  } catch {
+    return {};
+  }
+}
+
 function isImage(mime?: string) {
   return (mime ?? '').startsWith('image/');
 }
@@ -2025,6 +2057,19 @@ watch(
 function refreshLiveData() {
   if (!shouldPollLiveData.value || isPollingLiveData.value) return;
   isPollingLiveData.value = true;
+  if (['Dashboard Overview', 'Dashboard', 'Inbox / Live Chat'].includes(props.screen)) {
+    router.post('/app/messages/status/sync', {}, {
+      only: ['dashboard', 'module'],
+      preserveScroll: true,
+      preserveState: true,
+      replace: true,
+      onFinish: () => {
+        isPollingLiveData.value = false;
+      },
+    });
+    return;
+  }
+
   router.reload({
     only: ['dashboard', 'module'],
     preserveScroll: true,
@@ -2095,9 +2140,14 @@ function submitModule() {
   if (props.screen === 'Contacts CRM' && moduleForm.phone_number && !String(moduleForm.phone_number).trim().startsWith('+')) {
     moduleForm.phone_number = `${moduleForm.country_code} ${String(moduleForm.phone_number).trim()}`;
   }
-  moduleForm.post(config.route, {
+  const route = props.screen === 'WhatsApp Accounts' && editingWhatsAppAccountId.value
+    ? `/app/whatsapp-accounts/${editingWhatsAppAccountId.value}/update`
+    : config.route;
+
+  moduleForm.post(route, {
     preserveScroll: true,
     onSuccess: () => {
+      editingWhatsAppAccountId.value = null;
       moduleForm.reset();
       Object.entries(config.defaults ?? {}).forEach(([key, value]) => {
         moduleForm[key] = value;

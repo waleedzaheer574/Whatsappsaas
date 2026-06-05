@@ -32,15 +32,13 @@ class DashboardActionController extends Controller
         $workspaceId = $this->workspaceId($request);
         $countryCode = $data['country_code'] ?? '+92';
         unset($data['country_code']);
-        if (! str_starts_with(trim($data['phone_number']), '+')) {
-            $data['phone_number'] = $countryCode.' '.trim($data['phone_number']);
-        }
+        $data['phone_number'] = $this->normalizePhoneNumber($data['phone_number'], $countryCode);
 
         if (DB::table('contacts')->where('workspace_id', $workspaceId)->where('phone_number', $data['phone_number'])->exists()) {
             return back()->withErrors(['phone_number' => 'This phone number already exists in your CRM.']);
         }
 
-        $accountId = DB::table('whatsapp_accounts')->where('workspace_id', $workspaceId)->value('id');
+        $accountId = $this->activeWhatsAppAccountId($workspaceId);
         if (! $accountId) {
             $accountId = DB::table('whatsapp_accounts')->insertGetId([
                 'workspace_id' => $workspaceId,
@@ -194,7 +192,7 @@ class DashboardActionController extends Controller
                         ->withOptions(['proxy' => ''])
                         ->post("https://graph.facebook.com/v20.0/{$phoneNumberId}/messages", [
                             'messaging_product' => 'whatsapp',
-                            'to' => preg_replace('/\D+/', '', $conversationRecord->contact_phone),
+                    'to' => preg_replace('/\D+/', '', $this->normalizePhoneNumber($conversationRecord->contact_phone)),
                             'type' => 'text',
                             'text' => ['body' => $data['body']],
                         ]);
@@ -307,9 +305,18 @@ class DashboardActionController extends Controller
         $workspaceId = $this->workspaceId($request);
         $record = DB::table('messages')
             ->join('conversations', 'conversations.id', '=', 'messages.conversation_id')
+            ->join('contacts', 'contacts.id', '=', 'conversations.contact_id')
+            ->join('whatsapp_accounts', 'whatsapp_accounts.id', '=', 'conversations.whatsapp_account_id')
             ->where('messages.id', $message)
             ->where('conversations.workspace_id', $workspaceId)
-            ->select('messages.id', 'messages.direction', 'messages.created_at', 'messages.metadata')
+            ->select(
+                'messages.id',
+                'messages.direction',
+                'messages.created_at',
+                'messages.metadata',
+                'contacts.phone_number as contact_phone',
+                'whatsapp_accounts.settings as account_settings'
+            )
             ->first();
 
         abort_unless($record, 404);
@@ -326,13 +333,37 @@ class DashboardActionController extends Controller
         $metadata['edited'] = true;
         $metadata['edited_at'] = now()->toIso8601String();
 
+        $settings = json_decode($record->account_settings ?? '{}', true) ?: [];
+        $token = $settings['access_token'] ?? null;
+        $phoneNumberId = $settings['phone_number_id'] ?? null;
+
+        if ($token && $phoneNumberId && ! empty($metadata['provider_message_id'])) {
+            try {
+                $response = Http::withToken($token)
+                    ->timeout(15)
+                    ->connectTimeout(10)
+                    ->withOptions(['proxy' => ''])
+                    ->post("https://graph.facebook.com/v20.0/{$phoneNumberId}/messages", [
+                        'messaging_product' => 'whatsapp',
+                        'to' => preg_replace('/\D+/', '', $this->normalizePhoneNumber($record->contact_phone)),
+                        'type' => 'text',
+                        'text' => ['body' => 'Edited: '.$data['body']],
+                    ]);
+
+                $metadata['edit_follow_up_provider_message_id'] = $response->json('messages.0.id');
+                $metadata['edit_follow_up_error'] = $response->successful() ? null : $response->json();
+            } catch (\Illuminate\Http\Client\ConnectionException $exception) {
+                $metadata['edit_follow_up_error'] = $exception->getMessage();
+            }
+        }
+
         DB::table('messages')->where('id', $message)->update([
             'body' => $data['body'],
             'metadata' => json_encode($metadata),
             'updated_at' => now(),
         ]);
 
-        return back()->with('success', 'Message edited successfully.');
+        return back()->with('success', 'Message edited successfully. WhatsApp receives edited text as a new follow-up message.');
     }
 
     public function syncMessageStatuses(Request $request): RedirectResponse
@@ -431,9 +462,7 @@ class DashboardActionController extends Controller
         ]);
         $countryCode = $data['country_code'] ?? '+92';
         unset($data['country_code'], $data['avatar']);
-        if (! str_starts_with(trim($data['phone_number']), '+')) {
-            $data['phone_number'] = $countryCode.' '.trim($data['phone_number']);
-        }
+        $data['phone_number'] = $this->normalizePhoneNumber($data['phone_number'], $countryCode);
 
         $exists = DB::table('contacts')
             ->where('id', $contact)
@@ -654,6 +683,45 @@ class DashboardActionController extends Controller
         return back()->with('success', 'WhatsApp account connected.');
     }
 
+    public function updateWhatsAppAccount(Request $request, int $account): RedirectResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'phone_number' => ['required', 'string', 'max:40'],
+            'phone_number_id' => ['required', 'string', 'max:120'],
+            'access_token' => ['nullable', 'string', 'max:500'],
+            'verify_token' => ['required', 'string', 'max:120'],
+        ]);
+        $workspaceId = $this->workspaceId($request);
+        $record = DB::table('whatsapp_accounts')
+            ->where('id', $account)
+            ->where('workspace_id', $workspaceId)
+            ->first();
+
+        abort_unless($record, 404);
+
+        $oldSettings = json_decode($record->settings ?? '{}', true) ?: [];
+        $settings = [
+            'phone_number_id' => $data['phone_number_id'],
+            'access_token' => $data['access_token'] ?: ($oldSettings['access_token'] ?? null),
+            'verify_token' => $data['verify_token'],
+        ];
+        unset($data['phone_number_id'], $data['access_token'], $data['verify_token']);
+
+        DB::table('whatsapp_accounts')
+            ->where('id', $account)
+            ->where('workspace_id', $workspaceId)
+            ->update([
+                ...$data,
+                'status' => 'connected',
+                'last_synced_at' => now(),
+                'settings' => json_encode($settings),
+                'updated_at' => now(),
+            ]);
+
+        return back()->with('success', 'WhatsApp account updated successfully.');
+    }
+
     public function deleteWhatsAppAccount(Request $request, int $account): RedirectResponse
     {
         $workspaceId = $this->workspaceId($request);
@@ -831,5 +899,46 @@ class DashboardActionController extends Controller
         ]);
 
         return back()->with('success', 'Customer subscription updated successfully.');
+    }
+
+    private function activeWhatsAppAccountId(int $workspaceId): ?int
+    {
+        $account = DB::table('whatsapp_accounts')
+            ->where('workspace_id', $workspaceId)
+            ->whereNotNull('settings')
+            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(settings, '$.access_token')) IS NOT NULL")
+            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(settings, '$.phone_number_id')) IS NOT NULL")
+            ->latest('updated_at')
+            ->value('id');
+
+        return $account ? (int) $account : null;
+    }
+
+    private function normalizePhoneNumber(string $phone, string $countryCode = '+92'): string
+    {
+        $phone = trim($phone);
+        $countryCode = '+'.preg_replace('/\D+/', '', $countryCode);
+
+        if ($phone === '') {
+            return $countryCode;
+        }
+
+        if (str_starts_with($phone, '+')) {
+            return '+'.preg_replace('/\D+/', '', $phone);
+        }
+
+        $digits = preg_replace('/\D+/', '', $phone);
+        if (str_starts_with($digits, '00')) {
+            return '+'.substr($digits, 2);
+        }
+
+        $countryDigits = ltrim($countryCode, '+');
+        if (str_starts_with($digits, $countryDigits)) {
+            return '+'.$digits;
+        }
+
+        $digits = ltrim($digits, '0');
+
+        return $countryCode.$digits;
     }
 }

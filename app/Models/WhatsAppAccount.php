@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class WhatsAppAccount extends Model
 {
+    protected $table = 'whatsapp_accounts';
+
     protected $fillable = ['workspace_id', 'name', 'phone_number', 'provider', 'status', 'quality_rating', 'last_synced_at', 'settings'];
 
     protected function casts(): array

@@ -70,6 +70,7 @@ Route::prefix('app')->middleware('auth')->name('dashboard.')->group(function () 
         Route::delete('/messages/{message}', [DashboardActionController::class, 'deleteMessage'])->name('messages.destroy');
         Route::post('/team', [DashboardActionController::class, 'team'])->name('team.store');
         Route::post('/whatsapp-accounts', [DashboardActionController::class, 'whatsappAccount'])->name('whatsapp.store');
+        Route::post('/whatsapp-accounts/{account}/update', [DashboardActionController::class, 'updateWhatsAppAccount'])->name('whatsapp.update');
         Route::delete('/whatsapp-accounts/{account}', [DashboardActionController::class, 'deleteWhatsAppAccount'])->name('whatsapp.destroy');
         Route::post('/automations', [DashboardActionController::class, 'automation'])->name('automations.store');
         Route::post('/broadcasts', [DashboardActionController::class, 'broadcast'])->name('broadcasts.store');
