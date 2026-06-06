@@ -306,17 +306,13 @@ class DashboardActionController extends Controller
         $workspaceId = $this->workspaceId($request);
         $record = DB::table('messages')
             ->join('conversations', 'conversations.id', '=', 'messages.conversation_id')
-            ->join('contacts', 'contacts.id', '=', 'conversations.contact_id')
-            ->join('whatsapp_accounts', 'whatsapp_accounts.id', '=', 'conversations.whatsapp_account_id')
             ->where('messages.id', $message)
             ->where('conversations.workspace_id', $workspaceId)
             ->select(
                 'messages.id',
                 'messages.direction',
                 'messages.created_at',
-                'messages.metadata',
-                'contacts.phone_number as contact_phone',
-                'whatsapp_accounts.settings as account_settings'
+                'messages.metadata'
             )
             ->first();
 
@@ -326,33 +322,13 @@ class DashboardActionController extends Controller
             return back()->with('error', 'Only your sent messages can be edited.');
         }
 
+        if (\Illuminate\Support\Carbon::parse($record->created_at)->lt(now()->subMinutes(5))) {
+            return back()->with('error', 'Edit time expired. You can edit sent messages within 5 minutes only.');
+        }
+
         $metadata = json_decode($record->metadata ?? '{}', true) ?: [];
         $metadata['edited'] = true;
         $metadata['edited_at'] = now()->toIso8601String();
-
-        $settings = json_decode($record->account_settings ?? '{}', true) ?: [];
-        $token = $settings['access_token'] ?? null;
-        $phoneNumberId = $settings['phone_number_id'] ?? null;
-
-        if ($token && $phoneNumberId && ! empty($metadata['provider_message_id'])) {
-            try {
-                $response = Http::withToken($token)
-                    ->timeout(15)
-                    ->connectTimeout(10)
-                    ->withOptions(['proxy' => ''])
-                    ->post("https://graph.facebook.com/v20.0/{$phoneNumberId}/messages", [
-                        'messaging_product' => 'whatsapp',
-                        'to' => preg_replace('/\D+/', '', $this->normalizePhoneNumber($record->contact_phone)),
-                        'type' => 'text',
-                        'text' => ['body' => 'Edited: '.$data['body']],
-                    ]);
-
-                $metadata['edit_follow_up_provider_message_id'] = $response->json('messages.0.id');
-                $metadata['edit_follow_up_error'] = $response->successful() ? null : $response->json();
-            } catch (\Illuminate\Http\Client\ConnectionException $exception) {
-                $metadata['edit_follow_up_error'] = $exception->getMessage();
-            }
-        }
 
         DB::table('messages')->where('id', $message)->update([
             'body' => $data['body'],
@@ -360,7 +336,7 @@ class DashboardActionController extends Controller
             'updated_at' => now(),
         ]);
 
-        return back()->with('success', 'Message edited successfully. WhatsApp receives edited text as a new follow-up message.');
+        return back()->with('success', 'Message edited successfully.');
     }
 
     public function syncMessageStatuses(Request $request): RedirectResponse
@@ -1270,6 +1246,45 @@ class DashboardActionController extends Controller
         ]);
 
         return back()->with('success', 'Workspace settings saved.');
+    }
+
+    public function markAllNotificationsRead(Request $request): RedirectResponse
+    {
+        $workspaceId = $this->workspaceId($request);
+        DB::table('conversations')->where('workspace_id', $workspaceId)->update([
+            'unread_count' => 0,
+            'updated_at' => now(),
+        ]);
+        $this->activity($workspaceId, 'notifications.read', 'All notifications marked as read.');
+
+        return back()->with('success', 'All notifications marked as read.');
+    }
+
+    public function notificationSettings(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'inbox_alerts' => ['nullable', 'boolean'],
+            'subscription_alerts' => ['nullable', 'boolean'],
+            'activity_digest' => ['nullable', 'boolean'],
+            'email_alerts' => ['nullable', 'boolean'],
+            'quiet_hours' => ['required', 'in:off,night,weekend'],
+        ]);
+        $workspaceId = $this->workspaceId($request);
+        $settings = [
+            'inbox_alerts' => (bool) ($data['inbox_alerts'] ?? false),
+            'subscription_alerts' => (bool) ($data['subscription_alerts'] ?? false),
+            'activity_digest' => (bool) ($data['activity_digest'] ?? false),
+            'email_alerts' => (bool) ($data['email_alerts'] ?? false),
+            'quiet_hours' => $data['quiet_hours'],
+        ];
+
+        DB::table('workspaces')->where('id', $workspaceId)->update([
+            'notification_settings' => json_encode($settings),
+            'updated_at' => now(),
+        ]);
+        $this->activity($workspaceId, 'notifications.settings', 'Notification preferences updated.', $settings);
+
+        return back()->with('success', 'Notification preferences saved.');
     }
 
     public function adminWorkspaceSubscription(Request $request, int $workspace): RedirectResponse

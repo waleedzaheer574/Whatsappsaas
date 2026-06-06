@@ -113,21 +113,25 @@ class PageController extends Controller
             if ($renewsAt->isFuture() && $renewsAt->lessThanOrEqualTo(now()->addDays(2))) {
                 $subscriptionNotice = [
                     'id' => 'subscription-renewal',
+                    'type' => 'billing',
                     'title' => 'Subscription expiring soon',
                     'text' => 'Your subscription will expire on '.$renewsAt->format('M d, Y').'. Please renew or buy a subscription.',
                     'count' => 1,
                     'initial' => '!',
                     'created_at' => now(),
+                    'action_url' => '/app/billing',
                 ];
             }
         } elseif ($subscription?->status === 'expired') {
             $subscriptionNotice = [
                 'id' => 'subscription-expired',
+                'type' => 'billing',
                 'title' => 'Subscription expired',
                 'text' => 'Your subscription has expired. Please buy a subscription to continue.',
                 'count' => 1,
                 'initial' => '!',
                 'created_at' => now(),
+                'action_url' => '/app/billing',
             ];
         }
 
@@ -144,11 +148,13 @@ class PageController extends Controller
             ->get()
             ->map(fn ($conversation) => [
                 'id' => $conversation->id,
+                'type' => 'inbox',
                 'title' => $conversation->name,
                 'text' => $conversation->phone_number.' sent new message',
                 'count' => $conversation->count,
                 'initial' => strtoupper(substr($conversation->name ?? 'C', 0, 1)),
                 'created_at' => $conversation->last_message_at,
+                'action_url' => '/app/inbox',
             ]);
         if ($subscriptionNotice) {
             $notifications->prepend($subscriptionNotice);
@@ -325,6 +331,18 @@ class PageController extends Controller
                 'apiKeys' => $apiKeys,
                 'activity' => DB::table('activity_logs')->where('workspace_id', $workspaceId)->latest()->limit(80)->get(),
                 'accounts' => DB::table('whatsapp_accounts')->where('workspace_id', $workspaceId)->latest()->limit(20)->get(),
+                'notifications' => [
+                    'alerts' => $notifications->values(),
+                    'settings' => json_decode($workspace->notification_settings ?? '{}', true) ?: [
+                        'inbox_alerts' => true,
+                        'subscription_alerts' => true,
+                        'activity_digest' => true,
+                        'email_alerts' => false,
+                        'quiet_hours' => 'off',
+                    ],
+                    'activities' => DB::table('activity_logs')->where('workspace_id', $workspaceId)->latest()->limit(20)->get(),
+                    'unread_count' => $unreadNotifications,
+                ],
             ],
         ]);
     }

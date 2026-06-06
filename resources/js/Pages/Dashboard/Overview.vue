@@ -270,7 +270,6 @@ Content-Type: application/json</pre>
                 <div class="mt-1 flex flex-wrap items-center justify-end gap-2 text-[10px]">
                   <span class="text-slate-500 dark:text-slate-300">{{ shortTime(message.sent_at ?? message.created_at) }}</span>
                   <button v-if="canEditMessage(message)" class="rounded-md bg-violet-500/10 px-2 py-0.5 font-black text-violet-500 opacity-0 transition hover:bg-violet-500/15 group-hover:opacity-100 focus:opacity-100" type="button" @click="startEditMessage(message)">Edit</button>
-                  <span v-if="isEditedMessage(message)" class="font-black text-slate-400 dark:text-slate-300">Edited</span>
                   <span class="font-black uppercase text-slate-400 dark:text-slate-300">{{ cleanStatus(message.status) }}</span>
                   <span :class="message.direction === 'outbound' ? messageStatusClass(message.status) : 'font-black text-slate-400 dark:text-slate-500'">{{ messageTickIcon(message.status) }}</span>
                 </div>
@@ -390,6 +389,97 @@ Content-Type: application/json</pre>
         </aside>
       </section>
 
+      <section v-if="screen === 'Notifications'" class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div class="grid min-w-0 gap-4">
+          <section class="overflow-hidden rounded-[28px] border border-violet-100 bg-white shadow-glass dark:border-white/10 dark:bg-[#10182b]">
+            <div class="bg-gradient-to-br from-violet-700 via-violet-600 to-fuchsia-600 p-5 text-white sm:p-6">
+              <div class="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+                <div>
+                  <p class="text-xs font-black uppercase text-white/65">Notification Center</p>
+                  <h2 class="mt-2 text-2xl font-black sm:text-3xl">{{ notificationUnreadCount }} Active Alerts</h2>
+                  <p class="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/75">Realtime inbox alerts, subscription reminders and workspace activity updates stay here.</p>
+                </div>
+                <button class="rounded-2xl bg-white px-5 py-3 text-sm font-black text-violet-700 shadow-xl disabled:opacity-60" type="button" :disabled="notificationUnreadCount === 0" @click="markAllNotificationsRead">Mark All Read</button>
+              </div>
+            </div>
+            <div class="grid gap-3 p-4 sm:grid-cols-3 sm:p-5">
+              <article v-for="stat in notificationStats" :key="stat.label" class="rounded-2xl bg-slate-50 p-4 dark:bg-white/8">
+                <p class="text-xs font-black uppercase text-slate-400">{{ stat.label }}</p>
+                <p class="mt-2 text-2xl font-black">{{ stat.value }}</p>
+                <p class="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">{{ stat.help }}</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="dash-card">
+            <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+              <div>
+                <h2>Alerts</h2>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Unread WhatsApp conversations and billing reminders.</p>
+              </div>
+              <a href="/app/inbox" class="rounded-2xl bg-violet-600 px-4 py-2 text-xs font-black text-white shadow-glow">Open Inbox</a>
+            </div>
+            <div class="mt-5 grid gap-3">
+              <article v-for="alert in notificationAlerts" :key="`${alert.type ?? 'alert'}-${alert.id}`" class="rounded-2xl border border-violet-100 bg-violet-50/80 p-4 dark:border-white/10 dark:bg-white/[.06]">
+                <div class="flex gap-3">
+                  <div class="grid size-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-amber-300 to-pink-500 text-sm font-black text-white">{{ alert.initial ?? initial(alert.title ?? 'A') }}</div>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-start justify-between gap-2">
+                      <div class="min-w-0">
+                        <p class="truncate text-sm font-black">{{ alert.title }}</p>
+                        <p class="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">{{ alert.text }}</p>
+                      </div>
+                      <span v-if="alert.count" class="rounded-full bg-emerald-500 px-2 py-1 text-xs font-black text-white">{{ alert.count }}</span>
+                    </div>
+                    <div class="mt-3 flex flex-wrap items-center gap-2">
+                      <span class="text-xs font-bold text-slate-400">{{ relativeTime(alert.created_at) }}</span>
+                      <button v-if="alert.type === 'inbox'" class="rounded-lg bg-white px-3 py-1 text-xs font-black text-violet-700 dark:bg-white/10 dark:text-violet-200" type="button" @click="markConversationNotificationRead(alert.id)">Mark Read</button>
+                      <a :href="alert.action_url ?? '/app/inbox'" class="rounded-lg bg-violet-600 px-3 py-1 text-xs font-black text-white">Open</a>
+                    </div>
+                  </div>
+                </div>
+              </article>
+              <p v-if="!notificationAlerts.length" class="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm font-bold text-slate-400 dark:border-white/10">No active alerts. New WhatsApp messages and subscription reminders will appear here.</p>
+            </div>
+          </section>
+        </div>
+
+        <aside class="grid min-w-0 gap-4 content-start">
+          <section class="dash-card">
+            <h2>Preferences</h2>
+            <form class="mt-4 grid gap-3 text-sm font-bold" @submit.prevent="saveNotificationSettings">
+              <label v-for="item in notificationPreferenceItems" :key="item.key" class="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-white/8">
+                <span>{{ item.label }}</span>
+                <input v-model="notificationSettingsForm[item.key]" type="checkbox" class="size-5 accent-violet-600" />
+              </label>
+              <label class="grid gap-2">
+                <span>Quiet Hours</span>
+                <select v-model="notificationSettingsForm.quiet_hours" class="form-control">
+                  <option value="off">Off</option>
+                  <option value="night">Night Only</option>
+                  <option value="weekend">Weekend</option>
+                </select>
+              </label>
+              <button class="rounded-2xl bg-violet-600 px-5 py-3 text-sm font-black text-white shadow-glow disabled:opacity-60" :disabled="notificationSettingsForm.processing">Save Preferences</button>
+            </form>
+          </section>
+
+          <section class="dash-card">
+            <div class="flex items-center justify-between gap-3">
+              <h2>Recent Activity</h2>
+              <a href="/app/activity" class="text-xs font-black text-violet-600">View all</a>
+            </div>
+            <div class="mt-4 grid gap-3">
+              <article v-for="activity in notificationActivities.slice(0, 8)" :key="activity.id" class="rounded-2xl bg-slate-50 p-3 text-sm dark:bg-white/8">
+                <p class="font-black">{{ activity.description }}</p>
+                <p class="mt-1 text-xs font-bold text-slate-400">{{ cleanStatus(activity.type) }} - {{ relativeTime(activity.created_at) }}</p>
+              </article>
+              <p v-if="!notificationActivities.length" class="text-sm font-bold text-slate-400">No activity yet.</p>
+            </div>
+          </section>
+        </aside>
+      </section>
+
       <section v-else-if="screen !== 'Profile' && screen !== 'Subscription Billing' && screen !== 'Inbox / Live Chat'" class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <article v-for="card in moduleCards" :key="card.title" class="dash-card min-h-44">
           <div class="mb-5 grid size-11 place-items-center rounded-2xl bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">
@@ -417,6 +507,7 @@ Content-Type: application/json</pre>
             <select v-if="field.options" v-model="moduleForm[field.name]" class="form-control">
               <option v-for="option in field.options" :key="optionKey(option)" :value="optionValue(option)">{{ optionLabel(option) }}</option>
             </select>
+            <textarea v-else-if="field.type === 'textarea'" v-model="moduleForm[field.name]" class="form-control min-h-28 resize-y" :placeholder="field.placeholder" />
             <input v-else v-model="moduleForm[field.name]" :type="field.type ?? 'text'" class="form-control" :placeholder="field.name === 'phone_number' ? phonePlaceholder : field.placeholder" />
             <span v-if="moduleForm.errors[field.name]" class="text-xs text-red-500">{{ moduleForm.errors[field.name] }}</span>
           </label>
@@ -821,7 +912,6 @@ Content-Type: application/json</pre>
                 <div class="mt-2 flex flex-wrap items-center justify-end gap-2 text-[10px]">
                   <span :class="message.direction === 'outbound' ? 'text-white/70' : 'text-slate-500 dark:text-slate-400'">{{ shortTime(message.sent_at ?? message.created_at) }}</span>
                   <button v-if="canEditMessage(message)" class="rounded-md bg-violet-500/10 px-2 py-0.5 font-black text-violet-500 opacity-0 transition hover:bg-violet-500/15 group-hover:opacity-100 focus:opacity-100" type="button" @click="startEditMessage(message)">Edit</button>
-                  <span v-if="isEditedMessage(message)" class="font-black text-slate-400 dark:text-slate-300">Edited</span>
                   <span class="font-black uppercase">{{ cleanStatus(message.status) }}</span>
                   <span :class="message.direction === 'outbound' ? messageStatusClass(message.status) : 'font-black text-slate-400 dark:text-slate-500'">{{ messageTickIcon(message.status) }}</span>
                 </div>
@@ -1037,6 +1127,13 @@ const contactProfileForm = useForm<Record<string, any>>({
   deal_value: 0,
   avatar: null,
 });
+const notificationSettingsForm = useForm<Record<string, any>>({
+  inbox_alerts: props.module?.notifications?.settings?.inbox_alerts ?? true,
+  subscription_alerts: props.module?.notifications?.settings?.subscription_alerts ?? true,
+  activity_digest: props.module?.notifications?.settings?.activity_digest ?? true,
+  email_alerts: props.module?.notifications?.settings?.email_alerts ?? false,
+  quiet_hours: props.module?.notifications?.settings?.quiet_hours ?? 'off',
+});
 
 const userName = computed(() => page.props.auth?.user?.name ?? 'John');
 const isSuperAdmin = computed(() => Boolean(props.isSuperAdmin));
@@ -1172,6 +1269,21 @@ const phonePlaceholder = computed(() => `${moduleForm.country_code || '+92'} 300
 const firstAccount = computed(() => (props.module?.accounts?.[0] ?? props.dashboard?.accounts?.[0] ?? null));
 const activeWebhookUrl = computed(() => firstAccount.value?.id ? `${window.location.origin}/api/v1/webhooks/whatsapp/${firstAccount.value.id}` : 'Connect an account to generate webhook URL');
 const chatApiUrl = computed(() => `${window.location.origin}/api/v1/chats/messages`);
+const notificationModule = computed(() => props.module?.notifications ?? {});
+const notificationAlerts = computed(() => notificationModule.value.alerts ?? []);
+const notificationActivities = computed(() => notificationModule.value.activities ?? []);
+const notificationUnreadCount = computed(() => Number(notificationModule.value.unread_count ?? props.dashboard?.unreadNotifications ?? 0));
+const notificationPreferenceItems = [
+  { key: 'inbox_alerts', label: 'Inbox Alerts' },
+  { key: 'subscription_alerts', label: 'Subscription Reminders' },
+  { key: 'activity_digest', label: 'Activity Digest' },
+  { key: 'email_alerts', label: 'Email Alerts' },
+];
+const notificationStats = computed(() => [
+  { label: 'Unread', value: notificationUnreadCount.value.toLocaleString(), help: 'Inbox + billing alerts' },
+  { label: 'Activities', value: notificationActivities.value.length.toLocaleString(), help: 'Latest workspace events' },
+  { label: 'Rules', value: notificationPreferenceItems.filter((item) => notificationSettingsForm[item.key]).length.toLocaleString(), help: 'Enabled preferences' },
+]);
 const crmStages = [
   { key: 'new_lead', label: 'New Leads' },
   { key: 'interested', label: 'Interested' },
@@ -1790,6 +1902,31 @@ function updateCustomerSubscription(workspace: Row) {
   });
 }
 
+function markAllNotificationsRead() {
+  router.post('/app/notifications/mark-read', {}, {
+    preserveScroll: true,
+    preserveState: true,
+    only: ['dashboard', 'module', 'flash'],
+  });
+}
+
+function markConversationNotificationRead(conversationId: number | string) {
+  if (!conversationId) return;
+  router.post(`/app/conversations/${conversationId}/read`, {}, {
+    preserveScroll: true,
+    preserveState: true,
+    only: ['dashboard', 'module', 'flash'],
+  });
+}
+
+function saveNotificationSettings() {
+  notificationSettingsForm.post('/app/notifications/settings', {
+    preserveScroll: true,
+    preserveState: true,
+    only: ['dashboard', 'module', 'flash', 'errors'],
+  });
+}
+
 function selectAttachment(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0] ?? null;
   selectedAttachmentFile.value = file;
@@ -1942,14 +2079,6 @@ function canEditMessage(message: Row) {
   if (!message?.id || message.direction !== 'outbound') return false;
   const createdAt = message.created_at || message.sent_at ? parseAppDate(message.created_at ?? message.sent_at).getTime() : Date.now();
   return Date.now() - createdAt <= 5 * 60 * 1000;
-}
-
-function isEditedMessage(message: Row) {
-  try {
-    return Boolean(JSON.parse(message.metadata ?? '{}')?.edited);
-  } catch {
-    return false;
-  }
 }
 
 function startEditMessage(message: Row) {
@@ -2256,6 +2385,7 @@ function recordsForScreen() {
     Integrations: data.integrations ?? [],
     'API Keys': data.apiKeys ?? [],
     'Activity Logs': data.activity ?? [],
+    Notifications: data.notifications?.alerts ?? [],
     'Inbox / Live Chat': data.accounts ?? [],
     'WhatsApp Accounts': data.accounts ?? [],
     Settings: [props.workspace].filter(Boolean),

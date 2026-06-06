@@ -51,6 +51,8 @@ Route::prefix('app')->middleware('auth')->name('dashboard.')->group(function () 
         Route::get('/analytics', [PageController::class, 'dashboard'])->defaults('screen', 'Analytics')->name('analytics');
         Route::get('/team', [PageController::class, 'dashboard'])->defaults('screen', 'Team Management')->name('team');
         Route::get('/notifications', [PageController::class, 'dashboard'])->defaults('screen', 'Notifications')->name('notifications');
+        Route::post('/notifications/mark-read', [DashboardActionController::class, 'markAllNotificationsRead'])->name('notifications.markRead');
+        Route::post('/notifications/settings', [DashboardActionController::class, 'notificationSettings'])->name('notifications.settings');
         Route::get('/integrations', [PageController::class, 'dashboard'])->defaults('screen', 'Integrations')->name('integrations');
         Route::get('/api-keys', [PageController::class, 'dashboard'])->defaults('screen', 'API Keys')->name('apiKeys');
         Route::get('/activity', [PageController::class, 'dashboard'])->defaults('screen', 'Activity Logs')->name('activity');
