@@ -64,58 +64,95 @@ Content-Type: application/json</pre>
         </div>
       </section>
 
-      <section v-if="screen === 'Subscription Billing'" class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <section v-if="screen === 'Subscription Billing'" class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div class="grid min-w-0 gap-4">
-          <div v-if="page.props.flash?.error || !currentSubscription" class="rounded-[24px] border border-amber-200 bg-amber-50 p-5 text-amber-900 shadow-glass dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100">
-            <h2>Subscription Required</h2>
-            <p class="mt-2 text-sm font-bold leading-6">Choose a plan to unlock dashboard, CRM, inbox, automations, team tools and integrations. Payment mode: {{ paymentGatewayLabel }}.</p>
-          </div>
+          <section class="overflow-hidden rounded-[28px] border border-violet-100 bg-white shadow-glass dark:border-white/10 dark:bg-[#10182b]">
+            <div class="bg-gradient-to-br from-violet-700 via-violet-600 to-fuchsia-600 p-5 text-white sm:p-6">
+              <div class="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+                <div>
+                  <p class="text-xs font-black uppercase text-white/65">Billing Center</p>
+                  <h2 class="mt-2 text-2xl font-black sm:text-3xl">{{ currentSubscription ? `${cleanStatus(currentSubscription.plan)} Plan` : 'Choose Your Plan' }}</h2>
+                  <p class="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/75">{{ currentSubscription ? `Status: ${cleanStatus(currentSubscription.status)}. Your workspace renews ${currentSubscription.renews_at ? new Date(currentSubscription.renews_at).toLocaleDateString() : 'when billing is confirmed'}.` : `Unlock dashboard, inbox, CRM, automations, team tools and integrations. Payment mode: ${paymentGatewayLabel}.` }}</p>
+                </div>
+                <div class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:min-w-[420px]">
+                  <div v-for="item in billingUsageCards" :key="item.label" class="rounded-2xl bg-white/12 p-3 ring-1 ring-white/15">
+                    <p class="text-xs font-bold text-white/65">{{ item.label }}</p>
+                    <p class="mt-1 text-xl font-black">{{ item.value }}</p>
+                    <p class="mt-1 text-[11px] font-bold text-white/60">{{ item.help }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-if="page.props.flash?.error || !currentSubscription" class="border-t border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100">
+              Subscription required. Select a plan below to activate your workspace.
+            </div>
+          </section>
 
-          <div class="grid gap-4 lg:grid-cols-3">
-            <article v-for="plan in billingPlans" :key="plan.key" class="dash-card flex min-h-[320px] flex-col">
+          <section class="grid gap-4 lg:grid-cols-3">
+            <article v-for="plan in billingPlans" :key="plan.key" :class="['flex min-h-[360px] flex-col rounded-[24px] border bg-white p-5 shadow-glass transition hover:-translate-y-0.5 hover:border-violet-300 dark:bg-[#10182b]', currentSubscription?.plan === plan.key ? 'border-violet-400 ring-2 ring-violet-500/20 dark:border-violet-400' : 'border-violet-100 dark:border-white/10']">
               <div class="flex items-start justify-between gap-3">
                 <div>
-                  <h2>{{ plan.name }}</h2>
-                  <p class="mt-2 text-4xl font-black">${{ plan.price }}<span class="text-sm font-bold text-slate-500">/mo</span></p>
+                  <p class="text-xs font-black uppercase text-violet-500 dark:text-violet-300">{{ plan.key === 'pro' ? 'Popular' : 'Plan' }}</p>
+                  <h2 class="mt-1 text-xl font-black">{{ plan.name }}</h2>
                 </div>
                 <span v-if="currentSubscription?.plan === plan.key" class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">Active</span>
               </div>
+              <p class="mt-5 text-4xl font-black">${{ plan.price }}<span class="text-sm font-bold text-slate-500">/mo</span></p>
               <div class="mt-6 grid gap-3 text-sm font-bold text-slate-600 dark:text-slate-300">
-                <p v-for="feature in plan.features" :key="feature" class="flex items-center gap-2">
-                  <CheckCircle2 class="size-4 shrink-0 text-emerald-500" />
-                  {{ feature }}
+                <p v-for="feature in plan.features" :key="feature" class="flex items-start gap-2">
+                  <CheckCircle2 class="mt-0.5 size-4 shrink-0 text-emerald-500" />
+                  <span>{{ feature }}</span>
                 </p>
               </div>
-              <button class="mt-auto rounded-2xl bg-violet-600 px-5 py-3 text-sm font-black text-white shadow-glow disabled:opacity-60" :disabled="checkoutForm.processing" @click="startCheckout(plan.key)">
+              <button :class="['mt-auto rounded-2xl px-5 py-3 text-sm font-black transition disabled:opacity-60', currentSubscription?.plan === plan.key ? 'bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-200' : 'bg-violet-600 text-white shadow-glow hover:bg-violet-500']" :disabled="checkoutForm.processing || currentSubscription?.plan === plan.key" @click="startCheckout(plan.key)">
                 {{ currentSubscription?.plan === plan.key ? 'Current Plan' : 'Pay & Unlock' }}
               </button>
             </article>
-          </div>
+          </section>
         </div>
 
-        <aside class="grid min-w-0 gap-4">
+        <aside class="grid min-w-0 gap-4 content-start">
           <section class="dash-card">
-            <h2>Current Subscription</h2>
-            <div v-if="currentSubscription" class="mt-4 rounded-2xl bg-slate-50 p-4 text-sm dark:bg-white/8">
-              <p class="font-black">{{ cleanStatus(currentSubscription.plan) }} Plan</p>
-              <p class="mt-1 text-slate-500 dark:text-slate-400">Status: {{ cleanStatus(currentSubscription.status) }}</p>
-              <p class="mt-1 text-slate-500 dark:text-slate-400">Bought: {{ currentSubscription.created_at ? dateTime(currentSubscription.created_at) : 'Not set' }}</p>
-              <p class="mt-1 text-slate-500 dark:text-slate-400">Renews: {{ currentSubscription.renews_at ? new Date(currentSubscription.renews_at).toLocaleDateString() : 'Not set' }}</p>
+            <div class="flex items-center justify-between gap-3">
+              <h2>Current Subscription</h2>
+              <span :class="['rounded-full px-3 py-1 text-xs font-black', currentSubscription?.status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200']">{{ currentSubscription ? cleanStatus(currentSubscription.status) : 'Inactive' }}</span>
             </div>
-            <p v-else class="mt-4 text-sm font-bold text-slate-500 dark:text-slate-400">No active subscription yet.</p>
+            <div v-if="currentSubscription" class="mt-4 grid gap-3 text-sm">
+              <div class="rounded-2xl bg-slate-50 p-4 dark:bg-white/8">
+                <p class="text-xs font-black uppercase text-slate-400">Plan</p>
+                <p class="mt-1 text-lg font-black">{{ cleanStatus(currentSubscription.plan) }}</p>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div class="rounded-2xl bg-slate-50 p-3 dark:bg-white/8">
+                  <p class="text-xs font-black uppercase text-slate-400">Bought</p>
+                  <p class="mt-1 text-sm font-black">{{ currentSubscription.created_at ? dateTime(currentSubscription.created_at) : 'Not set' }}</p>
+                </div>
+                <div class="rounded-2xl bg-slate-50 p-3 dark:bg-white/8">
+                  <p class="text-xs font-black uppercase text-slate-400">Renews</p>
+                  <p class="mt-1 text-sm font-black">{{ currentSubscription.renews_at ? new Date(currentSubscription.renews_at).toLocaleDateString() : 'Not set' }}</p>
+                </div>
+              </div>
+            </div>
+            <p v-else class="mt-4 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500 dark:bg-white/8 dark:text-slate-400">No active subscription yet.</p>
           </section>
 
           <section class="dash-card">
-            <h2>Invoices</h2>
+            <div class="flex items-center justify-between gap-3">
+              <h2>Invoices</h2>
+              <span class="rounded-full bg-violet-100 px-3 py-1 text-xs font-black text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">{{ invoiceRows.length }}</span>
+            </div>
             <div class="mt-4 grid gap-3">
-              <article v-for="invoice in invoiceRows" :key="invoice.id" class="rounded-2xl bg-slate-50 p-3 text-sm dark:bg-white/8">
-                <div class="flex items-center justify-between gap-3">
-                  <p class="font-black">{{ invoice.number ?? invoice.stripe_invoice_id }}</p>
+              <article v-for="invoice in invoiceRows" :key="invoice.id" class="rounded-2xl border border-slate-100 bg-slate-50 p-3 text-sm dark:border-white/10 dark:bg-white/8">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="truncate font-black">{{ invoice.number ?? invoice.stripe_invoice_id ?? `Invoice #${invoice.id}` }}</p>
+                    <p class="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">{{ invoice.paid_at ? dateTime(invoice.paid_at) : relativeTime(invoice.created_at) }}</p>
+                  </div>
                   <span class="rounded-full bg-violet-100 px-2 py-1 text-xs font-black text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">{{ cleanStatus(invoice.status) }}</span>
                 </div>
-                <p class="mt-1 text-slate-500 dark:text-slate-400">${{ invoice.amount_due }} due / ${{ invoice.amount_paid }} paid</p>
+                <p class="mt-3 text-sm font-black">${{ invoice.amount_paid ?? 0 }} paid <span class="text-slate-400">/ ${{ invoice.amount_due ?? 0 }} due</span></p>
               </article>
-              <p v-if="!invoiceRows.length" class="text-sm font-bold text-slate-400">Invoices will appear after checkout.</p>
+              <p v-if="!invoiceRows.length" class="rounded-2xl border border-dashed border-slate-200 p-4 text-center text-sm font-bold text-slate-400 dark:border-white/10">Invoices will appear after checkout.</p>
             </div>
           </section>
 
@@ -1112,6 +1149,17 @@ const crmNotes = computed(() => props.module?.notes ?? []);
 const billingPlans = computed(() => props.module?.paymentPlans ?? fallbackPlans);
 const invoiceRows = computed(() => props.module?.invoices ?? []);
 const currentSubscription = computed(() => props.dashboard?.currentSubscription ?? props.module?.subscriptions?.[0] ?? null);
+const billingUsageCards = computed(() => {
+  const limits = parseJsonObject(currentSubscription.value?.limits);
+  const messages = (props.dashboard?.stats ?? []).find((stat: Row) => stat.key === 'messages')?.value ?? '0';
+  const teamCount = (props.module?.team ?? []).length;
+
+  return [
+    { label: 'Messages', value: `${messages} / ${Number(limits.messages ?? 1000).toLocaleString()}`, help: 'This billing month' },
+    { label: 'WhatsApp', value: `${accountRows.value.length} / ${limits.whatsapp_accounts ?? 1}`, help: 'Connected accounts' },
+    { label: 'Team', value: `${teamCount} / ${limits.team_members ?? 2}`, help: 'Workspace seats' },
+  ];
+});
 const activeChatBlocked = computed(() => isBlocked(activeChat.value));
 const activeProfileContact = computed(() => {
   const contactId = activeProfileContactId.value;
