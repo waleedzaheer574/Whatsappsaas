@@ -20,7 +20,9 @@ class TrainingSourceController extends Controller
     {
         $source = AiTrainingSource::query()->create($request->validate([
             'title' => ['required', 'string', 'max:255'],
-            'type' => ['required', 'string', 'max:60'],
+            'type' => ['required', 'in:document,url,faq'],
+            'content' => ['nullable', 'string', 'max:20000'],
+            'source_url' => ['nullable', 'url', 'max:500'],
             'status' => ['nullable', 'string', 'max:60'],
         ]) + ['workspace_id' => $request->attributes->get('workspace_id')]);
 
@@ -38,7 +40,7 @@ class TrainingSourceController extends Controller
     {
         abort_unless($trainingSource->workspace_id === (int) $request->attributes->get('workspace_id'), 404);
 
-        $trainingSource->update($request->only(['title', 'type', 'status', 'chunks_count', 'trained_at']));
+        $trainingSource->update($request->only(['title', 'type', 'content', 'source_url', 'status', 'chunks_count', 'trained_at', 'metadata']));
 
         return $this->success($trainingSource->fresh(), 'Training source updated successfully');
     }

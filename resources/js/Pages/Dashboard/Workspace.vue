@@ -374,14 +374,29 @@ Content-Type: application/json</pre>
         <div v-if="screen === 'Subscription Billing' && !recordsForScreen().length" class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
           Your account is created, but CRM access is locked until a subscription is active. Choose a plan below to unlock the dashboard, contacts, inbox, automations and team tools.
         </div>
+        <div v-if="screen === 'Integrations'" class="mt-5 rounded-2xl border border-violet-100 bg-violet-50 p-4 text-sm dark:border-white/10 dark:bg-violet-500/10">
+          <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p class="text-xs font-black uppercase text-violet-600 dark:text-violet-300">{{ selectedIntegrationProvider?.label ?? 'Integration' }} Setup</p>
+              <h3 class="mt-1 text-lg font-black text-slate-900 dark:text-white">{{ integrationSetupTitle }}</h3>
+              <p class="mt-2 max-w-3xl text-sm font-semibold leading-6 text-slate-600 dark:text-slate-300">{{ integrationSetupDescription }}</p>
+            </div>
+            <span class="shrink-0 rounded-full bg-white px-3 py-2 text-xs font-black text-violet-700 dark:bg-white/10 dark:text-violet-200">{{ selectedIntegrationFields.length }} required field{{ selectedIntegrationFields.length === 1 ? '' : 's' }}</span>
+          </div>
+          <div class="mt-4 flex flex-wrap gap-2">
+            <span v-for="field in selectedIntegrationFields" :key="`required-${field.name}`" class="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600 ring-1 ring-violet-100 dark:bg-white/10 dark:text-slate-200 dark:ring-white/10">{{ field.label }}</span>
+          </div>
+        </div>
         <form class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4" @submit.prevent="submitModule">
           <label v-for="field in formFields" :key="field.name" class="grid gap-2 text-sm font-bold">
             <span>{{ field.label }}</span>
             <select v-if="field.options" v-model="moduleForm[field.name]" class="form-control">
               <option v-for="option in field.options" :key="optionKey(option)" :value="optionValue(option)">{{ optionLabel(option) }}</option>
             </select>
+            <textarea v-else-if="field.type === 'textarea'" v-model="moduleForm[field.name]" class="form-control min-h-28 resize-y" :placeholder="field.placeholder" />
             <input v-else v-model="moduleForm[field.name]" :type="field.type ?? 'text'" class="form-control" :placeholder="field.name === 'phone_number' ? phonePlaceholder : field.placeholder" />
             <span v-if="moduleForm.errors[field.name]" class="text-xs text-red-500">{{ moduleForm.errors[field.name] }}</span>
+            <span v-else-if="field.help" class="text-xs font-semibold text-slate-400">{{ field.help }}</span>
           </label>
           <div class="flex items-end">
             <button class="w-full rounded-2xl bg-violet-600 px-5 py-3 text-sm font-black text-white shadow-glow disabled:opacity-60" :disabled="moduleForm.processing">{{ screen === 'WhatsApp Accounts' && editingWhatsAppAccountId ? 'Update WhatsApp' : primaryAction }}</button>
@@ -966,8 +981,19 @@ const moduleForm = useForm<Record<string, any>>({
   title: '',
   type: 'document',
   provider: 'shopify',
-  phone_number_id: '',
+  shop_domain: '',
   access_token: '',
+  site_url: '',
+  consumer_key: '',
+  consumer_secret: '',
+  webhook_url: '',
+  secret_key: '',
+  bot_token: '',
+  chat_id: '',
+  spreadsheet_id: '',
+  service_account_email: '',
+  private_key: '',
+  phone_number_id: '',
   verify_token: 'chatflow_verify_token',
   workspace_name: props.workspace?.name ?? 'ChatFlow AI Demo',
   timezone: props.workspace?.timezone ?? 'Asia/Karachi',
@@ -1409,6 +1435,77 @@ const whatsAppSetupFields = [
   { name: 'verify_token', label: 'Verify Token', placeholder: 'chatflow_verify_token' },
 ];
 
+const integrationProviderOptions = [
+  { label: 'Shopify', value: 'shopify' },
+  { label: 'WooCommerce', value: 'woocommerce' },
+  { label: 'Zapier', value: 'zapier' },
+  { label: 'Stripe', value: 'stripe' },
+  { label: 'Telegram', value: 'telegram' },
+  { label: 'Slack', value: 'slack' },
+  { label: 'Google Sheets', value: 'google_sheets' },
+];
+
+const integrationFieldMap: Row = {
+  shopify: [
+    { name: 'shop_domain', label: 'Shop Domain', placeholder: 'your-store.myshopify.com', help: 'Use your Shopify admin store domain.' },
+    { name: 'access_token', label: 'Admin Access Token', placeholder: 'shpat_...', type: 'password' },
+  ],
+  woocommerce: [
+    { name: 'site_url', label: 'Store URL', placeholder: 'https://example.com' },
+    { name: 'consumer_key', label: 'Consumer Key', placeholder: 'ck_...', type: 'password' },
+    { name: 'consumer_secret', label: 'Consumer Secret', placeholder: 'cs_...', type: 'password' },
+  ],
+  zapier: [
+    { name: 'webhook_url', label: 'Webhook URL', placeholder: 'https://hooks.zapier.com/hooks/catch/...' },
+  ],
+  stripe: [
+    { name: 'secret_key', label: 'Secret Key', placeholder: 'sk_test_...', type: 'password' },
+  ],
+  telegram: [
+    { name: 'bot_token', label: 'Bot Token', placeholder: '123456:ABC...', type: 'password' },
+    { name: 'chat_id', label: 'Default Chat ID', placeholder: 'Optional, for test messages' },
+  ],
+  slack: [
+    { name: 'bot_token', label: 'Bot Token', placeholder: 'xoxb-...', type: 'password' },
+  ],
+  google_sheets: [
+    { name: 'spreadsheet_id', label: 'Spreadsheet ID', placeholder: 'Google Sheet ID' },
+    { name: 'service_account_email', label: 'Service Account Email', placeholder: 'bot@project.iam.gserviceaccount.com' },
+    { name: 'private_key', label: 'Private Key', placeholder: '-----BEGIN PRIVATE KEY-----', type: 'textarea' },
+  ],
+};
+
+const integrationSetupCopy: Row = {
+  shopify: {
+    title: 'Connect a Shopify store with Admin API access.',
+    description: 'Create a custom app in Shopify Admin, enable Admin API scopes, install it, then paste the store domain and admin access token here.',
+  },
+  woocommerce: {
+    title: 'Connect WooCommerce using REST API keys.',
+    description: 'Create REST API keys in WooCommerce settings, then paste your store URL, consumer key and consumer secret.',
+  },
+  zapier: {
+    title: 'Connect Zapier with a Catch Hook URL.',
+    description: 'Create a Zapier Catch Hook trigger, copy the webhook URL, and this CRM will send a test payload to verify it.',
+  },
+  stripe: {
+    title: 'Connect Stripe with a secret API key.',
+    description: 'Paste a Stripe test or live secret key. The system calls Stripe account API to confirm the key works.',
+  },
+  telegram: {
+    title: 'Connect Telegram with a bot token.',
+    description: 'Create a bot using BotFather and paste the bot token. Optional chat ID can be used for default notifications later.',
+  },
+  slack: {
+    title: 'Connect Slack with a bot user token.',
+    description: 'Install your Slack app in a workspace and paste the xoxb bot token. The system calls Slack auth.test.',
+  },
+  google_sheets: {
+    title: 'Connect Google Sheets with service account credentials.',
+    description: 'Create a service account, share your sheet with its email, then paste spreadsheet ID, service email and private key.',
+  },
+};
+
 const moduleCards = computed(() => [
   { title: `${pageTitle.value} Overview`, text: `${recordsForScreen().length} live records in this module. Latest data refreshes through dashboard polling.`, icon: MessageSquare, kind: 'overview' },
   { title: 'Smart Filters', text: 'Search, segment and prioritize records with fast workspace-level filtering.', icon: ShieldCheck, kind: 'filters' },
@@ -1432,6 +1529,7 @@ const filteredTableRows = computed(() => {
 const recordDetailFields = computed(() => {
   if (!viewRecord.value) return [];
   const raw = viewRecord.value.raw ?? {};
+  const settings = parseJsonObject(raw.settings);
   const fields = [
     ['Name', viewRecord.value.name],
     ['Status', viewRecord.value.status],
@@ -1442,6 +1540,9 @@ const recordDetailFields = computed(() => {
     ['Plan', raw.plan],
     ['Role', raw.role],
     ['Provider', raw.provider],
+    ['Last Test', settings.last_tested_at ? new Date(settings.last_tested_at).toLocaleString() : null],
+    ['Test Result', settings.test_message],
+    ['Credential Fields', Array.isArray(settings.credential_keys) ? settings.credential_keys.join(', ') : null],
     ['Value', raw.deal_value ?? raw.value],
     ['Created', raw.created_at ? new Date(raw.created_at).toLocaleString() : null],
   ];
@@ -1547,7 +1648,7 @@ const formConfig: Row = {
   },
   Integrations: {
     route: '/app/integrations',
-    fields: [{ name: 'provider', label: 'Provider', options: ['shopify', 'woocommerce', 'zapier', 'stripe', 'telegram', 'slack', 'google_sheets'] }],
+    fields: [{ name: 'provider', label: 'Provider', options: integrationProviderOptions }],
     defaults: { provider: 'shopify' },
   },
   'API Keys': {
@@ -1576,7 +1677,21 @@ const formConfig: Row = {
   },
 };
 
-const formFields = computed(() => ['Subscription Billing', 'Inbox / Live Chat'].includes(props.screen) ? [] : (formConfig[props.screen]?.fields ?? []));
+const selectedIntegrationProvider = computed(() => integrationProviderOptions.find((option) => option.value === moduleForm.provider));
+const selectedIntegrationFields = computed(() => integrationFieldMap[moduleForm.provider] ?? []);
+const integrationSetupTitle = computed(() => integrationSetupCopy[moduleForm.provider]?.title ?? 'Select a provider to connect.');
+const integrationSetupDescription = computed(() => integrationSetupCopy[moduleForm.provider]?.description ?? 'Choose an app provider, fill its credentials, then click Connect App.');
+
+const formFields = computed(() => {
+  if (['Subscription Billing', 'Inbox / Live Chat'].includes(props.screen)) return [];
+  const fields = formConfig[props.screen]?.fields ?? [];
+  if (props.screen !== 'Integrations') return fields;
+
+  return [
+    ...fields,
+    ...selectedIntegrationFields.value,
+  ];
+});
 const currentForm = computed(() => formConfig[props.screen] ?? null);
 
 function initial(name: string) {
@@ -2024,6 +2139,16 @@ watch(
   () => props.dashboard?.chartPeriod,
   (period) => {
     if (period) selectedChartPeriod.value = period;
+  },
+);
+
+watch(
+  () => moduleForm.provider,
+  () => {
+    ['shop_domain', 'access_token', 'site_url', 'consumer_key', 'consumer_secret', 'webhook_url', 'secret_key', 'bot_token', 'chat_id', 'spreadsheet_id', 'service_account_email', 'private_key'].forEach((field) => {
+      moduleForm[field] = '';
+    });
+    moduleForm.clearErrors();
   },
 );
 

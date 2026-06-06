@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -210,10 +211,29 @@ class PageController extends Controller
         $component = match($screen) {
             'Inbox / Live Chat' => 'Dashboard/Inbox',
             'Contacts CRM' => 'Dashboard/Contacts',
-            'AI Automations' => 'Dashboard/Automations',
-            'Broadcast Campaigns' => 'Dashboard/Broadcasts',
             default => 'Dashboard/Overview',
         };
+
+        $apiKeys = DB::table('api_keys')
+            ->where('workspace_id', $workspaceId)
+            ->latest()
+            ->limit(50)
+            ->get()
+            ->map(function ($apiKey) {
+                $apiKey->plain_token = null;
+
+                if (! empty($apiKey->encrypted_token)) {
+                    try {
+                        $apiKey->plain_token = Crypt::decryptString($apiKey->encrypted_token);
+                    } catch (\Throwable) {
+                        $apiKey->plain_token = null;
+                    }
+                }
+
+                unset($apiKey->encrypted_token);
+
+                return $apiKey;
+            });
 
         return Inertia::render($component, [
             'screen' => $screen,
@@ -286,9 +306,23 @@ class PageController extends Controller
                 'automations' => DB::table('ai_automations')->where('workspace_id', $workspaceId)->latest()->limit(50)->get(),
                 'broadcasts' => DB::table('broadcast_campaigns')->where('workspace_id', $workspaceId)->latest()->limit(50)->get(),
                 'training' => DB::table('ai_training_sources')->where('workspace_id', $workspaceId)->latest()->limit(50)->get(),
-                'team' => DB::table('workspace_user')->join('users', 'users.id', '=', 'workspace_user.user_id')->where('workspace_user.workspace_id', $workspaceId)->select('users.name', 'users.email', 'workspace_user.role', 'workspace_user.created_at')->latest('workspace_user.created_at')->limit(50)->get(),
+                'team' => DB::table('workspace_user')
+                    ->join('users', 'users.id', '=', 'workspace_user.user_id')
+                    ->where('workspace_user.workspace_id', $workspaceId)
+                    ->select(
+                        'workspace_user.id',
+                        'workspace_user.user_id',
+                        'users.name',
+                        'users.email',
+                        'workspace_user.role',
+                        'workspace_user.created_at',
+                        'workspace_user.updated_at',
+                    )
+                    ->latest('workspace_user.created_at')
+                    ->limit(50)
+                    ->get(),
                 'integrations' => DB::table('connected_integrations')->where('workspace_id', $workspaceId)->latest()->limit(50)->get(),
-                'apiKeys' => DB::table('api_keys')->where('workspace_id', $workspaceId)->latest()->limit(50)->get(),
+                'apiKeys' => $apiKeys,
                 'activity' => DB::table('activity_logs')->where('workspace_id', $workspaceId)->latest()->limit(80)->get(),
                 'accounts' => DB::table('whatsapp_accounts')->where('workspace_id', $workspaceId)->latest()->limit(20)->get(),
             ],

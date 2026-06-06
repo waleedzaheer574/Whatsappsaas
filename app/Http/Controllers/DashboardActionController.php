@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Hash;
@@ -617,22 +618,115 @@ class DashboardActionController extends Controller
             'email' => ['required', 'email'],
             'role' => ['required', 'in:owner,manager,agent,viewer'],
         ]);
-        $userId = DB::table('users')->insertGetId([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'password' => Hash::make('password'),
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $workspaceId = $this->workspaceId($request);
+        $subscription = DB::table('subscriptions')->where('workspace_id', $workspaceId)->latest()->first();
+        $limits = json_decode($subscription->limits ?? '{}', true) ?: [];
+        $teamLimit = (int) ($limits['team_members'] ?? 2);
+        $currentMembers = DB::table('workspace_user')->where('workspace_id', $workspaceId)->count();
+
+        if ($currentMembers >= $teamLimit) {
+            return back()->with('error', "Your current plan allows {$teamLimit} team member(s). Please upgrade your subscription to add more.");
+        }
+
+        $existingUser = DB::table('users')->where('email', $data['email'])->first();
+        $userId = $existingUser?->id;
+        $temporaryPassword = 'password';
+
+        if (! $userId) {
+            $userId = DB::table('users')->insertGetId([
+                'name' => $data['name'],
+                'email' => $data['email'],
+                'password' => Hash::make($temporaryPassword),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        } else {
+            DB::table('users')->where('id', $userId)->update([
+                'name' => $data['name'],
+                'updated_at' => now(),
+            ]);
+        }
+
+        $alreadyMember = DB::table('workspace_user')
+            ->where('workspace_id', $workspaceId)
+            ->where('user_id', $userId)
+            ->exists();
+
+        if ($alreadyMember) {
+            return back()->withErrors(['email' => 'This user is already a member of your workspace.']);
+        }
+
         DB::table('workspace_user')->insert([
-            'workspace_id' => $this->workspaceId($request),
+            'workspace_id' => $workspaceId,
             'user_id' => $userId,
             'role' => $data['role'],
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $this->activity($workspaceId, 'team.invited', 'Team member invited: '.$data['email'], ['role' => $data['role']]);
 
-        return back()->with('success', 'Team member invited successfully.');
+        return back()->with('success', 'Team member invited successfully. Temporary password: '.$temporaryPassword);
+    }
+
+    public function updateTeamMemberRole(Request $request, int $member): RedirectResponse
+    {
+        $data = $request->validate([
+            'role' => ['required', 'in:owner,manager,agent,viewer'],
+        ]);
+        $workspaceId = $this->workspaceId($request);
+        $record = DB::table('workspace_user')
+            ->join('users', 'users.id', '=', 'workspace_user.user_id')
+            ->where('workspace_user.id', $member)
+            ->where('workspace_user.workspace_id', $workspaceId)
+            ->select('workspace_user.*', 'users.email')
+            ->first();
+
+        abort_unless($record, 404);
+
+        if ((int) $record->user_id === (int) $request->user()->id && $record->role === 'owner' && $data['role'] !== 'owner') {
+            return back()->with('error', 'You cannot remove your own owner role.');
+        }
+
+        DB::table('workspace_user')->where('id', $member)->where('workspace_id', $workspaceId)->update([
+            'role' => $data['role'],
+            'updated_at' => now(),
+        ]);
+        $this->activity($workspaceId, 'team.role_updated', 'Team member role updated: '.$record->email, ['role' => $data['role']]);
+
+        return back()->with('success', 'Team member role updated.');
+    }
+
+    public function deleteTeamMember(Request $request, int $member): RedirectResponse
+    {
+        $workspaceId = $this->workspaceId($request);
+        $record = DB::table('workspace_user')
+            ->join('users', 'users.id', '=', 'workspace_user.user_id')
+            ->where('workspace_user.id', $member)
+            ->where('workspace_user.workspace_id', $workspaceId)
+            ->select('workspace_user.*', 'users.email')
+            ->first();
+
+        abort_unless($record, 404);
+
+        if ((int) $record->user_id === (int) $request->user()->id) {
+            return back()->with('error', 'You cannot remove yourself from the workspace.');
+        }
+
+        if ($record->role === 'owner') {
+            $ownerCount = DB::table('workspace_user')->where('workspace_id', $workspaceId)->where('role', 'owner')->count();
+            if ($ownerCount <= 1) {
+                return back()->with('error', 'At least one owner must remain in this workspace.');
+            }
+        }
+
+        DB::table('workspace_user')->where('id', $member)->where('workspace_id', $workspaceId)->delete();
+        DB::table('role_user')->where('workspace_id', $workspaceId)->where('user_id', $record->user_id)->delete();
+        DB::table('team_user')->where('user_id', $record->user_id)->whereIn('team_id', function ($query) use ($workspaceId) {
+            $query->select('id')->from('teams')->where('workspace_id', $workspaceId);
+        })->delete();
+        $this->activity($workspaceId, 'team.removed', 'Team member removed: '.$record->email);
+
+        return back()->with('success', 'Team member removed.');
     }
 
     public function whatsappAccount(Request $request): RedirectResponse
@@ -758,34 +852,171 @@ class DashboardActionController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'trigger' => ['required', 'string', 'max:255'],
+            'action_type' => ['required', 'in:send_ai_reply,send_template,update_status,add_note'],
+            'reply_template' => ['nullable', 'string', 'max:2000'],
+            'update_contact_status' => ['nullable', 'in:new_lead,interested,follow_up,won,lost,blocked'],
         ]);
-        DB::table('ai_automations')->insert([
-            ...$data,
-            'workspace_id' => $this->workspaceId($request),
+        $workspaceId = $this->workspaceId($request);
+        $flow = [
+            'match' => 'contains',
+            'actions' => [[
+                'type' => $data['action_type'],
+                'reply_template' => $data['reply_template'] ?? null,
+                'update_contact_status' => $data['update_contact_status'] ?? 'interested',
+            ]],
+        ];
+        $automationId = DB::table('ai_automations')->insertGetId([
+            'workspace_id' => $workspaceId,
+            'name' => $data['name'],
+            'trigger' => $data['trigger'],
             'status' => 'active',
-            'flow' => json_encode(['conditions' => [], 'actions' => ['send_ai_reply']]),
+            'flow' => json_encode($flow),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        DB::table('automation_triggers')->insert([
+            'automation_id' => $automationId,
+            'type' => 'keyword_contains',
+            'config' => json_encode(['keyword' => $data['trigger']]),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('automation_actions')->insert([
+            'automation_id' => $automationId,
+            'type' => $data['action_type'],
+            'sort_order' => 1,
+            'config' => json_encode($flow['actions'][0]),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $this->activity($workspaceId, 'automation.created', 'Automation created: '.$data['name']);
 
-        return back()->with('success', 'Automation created.');
+        return back()->with('success', 'Automation created and activated.');
+    }
+
+    public function toggleAutomation(Request $request, int $automation): RedirectResponse
+    {
+        $workspaceId = $this->workspaceId($request);
+        $record = DB::table('ai_automations')->where('id', $automation)->where('workspace_id', $workspaceId)->first();
+        abort_unless($record, 404);
+
+        $status = $record->status === 'active' ? 'paused' : 'active';
+        DB::table('ai_automations')->where('id', $automation)->update(['status' => $status, 'updated_at' => now()]);
+        $this->activity($workspaceId, 'automation.'.$status, Str::headline($status).' automation: '.$record->name);
+
+        return back()->with('success', 'Automation '.($status === 'active' ? 'activated' : 'paused').'.');
+    }
+
+    public function deleteAutomation(Request $request, int $automation): RedirectResponse
+    {
+        DB::table('ai_automations')->where('id', $automation)->where('workspace_id', $this->workspaceId($request))->delete();
+
+        return back()->with('success', 'Automation deleted.');
     }
 
     public function broadcast(Request $request): RedirectResponse
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'audience_count' => ['required', 'integer', 'min:1'],
+            'body' => ['required', 'string', 'max:2000'],
+            'audience_status' => ['required', 'in:all,new_lead,interested,follow_up,won'],
+            'audience_count' => ['required', 'integer', 'min:1', 'max:5000'],
+            'scheduled_at' => ['nullable', 'date'],
         ]);
-        DB::table('broadcast_campaigns')->insert([
-            ...$data,
-            'workspace_id' => $this->workspaceId($request),
-            'status' => 'draft',
+        $workspaceId = $this->workspaceId($request);
+        $contactsQuery = DB::table('contacts')->where('workspace_id', $workspaceId)->where('status', '!=', 'blocked');
+        if ($data['audience_status'] !== 'all') {
+            $contactsQuery->where('status', $data['audience_status']);
+        }
+        $audienceCount = min((int) $data['audience_count'], (clone $contactsQuery)->count());
+        $broadcastId = DB::table('broadcast_campaigns')->insertGetId([
+            'workspace_id' => $workspaceId,
+            'name' => $data['name'],
+            'body' => $data['body'],
+            'audience_filter' => json_encode(['status' => $data['audience_status']]),
+            'status' => $data['scheduled_at'] ? 'scheduled' : 'draft',
+            'audience_count' => $audienceCount,
+            'scheduled_at' => $data['scheduled_at'] ?? null,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $this->activity($workspaceId, 'broadcast.created', 'Broadcast campaign created: '.$data['name']);
 
-        return back()->with('success', 'Broadcast campaign created.');
+        if (! $data['scheduled_at']) {
+            return $this->sendBroadcast($request, $broadcastId);
+        }
+
+        return back()->with('success', 'Broadcast campaign scheduled.');
+    }
+
+    public function sendBroadcast(Request $request, int $broadcast): RedirectResponse
+    {
+        $workspaceId = $this->workspaceId($request);
+        $campaign = DB::table('broadcast_campaigns')->where('id', $broadcast)->where('workspace_id', $workspaceId)->first();
+        abort_unless($campaign, 404);
+
+        $filter = json_decode($campaign->audience_filter ?? '{}', true) ?: [];
+        $contacts = DB::table('contacts')
+            ->where('workspace_id', $workspaceId)
+            ->where('status', '!=', 'blocked')
+            ->when(($filter['status'] ?? 'all') !== 'all', fn ($query) => $query->where('status', $filter['status']))
+            ->latest()
+            ->limit(max(1, (int) $campaign->audience_count))
+            ->get();
+
+        if ($contacts->isEmpty()) {
+            DB::table('broadcast_campaigns')->where('id', $campaign->id)->update(['status' => 'empty', 'updated_at' => now()]);
+
+            return back()->with('error', 'No matching contacts found for this broadcast audience.');
+        }
+
+        DB::table('broadcast_campaigns')->where('id', $campaign->id)->update([
+            'status' => 'sending',
+            'started_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $sent = 0;
+        $failed = 0;
+        $accountId = $this->activeWhatsAppAccountId($workspaceId);
+        foreach ($contacts as $contact) {
+            $body = $this->renderBroadcastBody((string) $campaign->body, $contact);
+            $conversationId = $this->findOrCreateConversation($workspaceId, $accountId, (int) $contact->id);
+            $result = $this->createAndSendOutboundText($conversationId, $body, true, ['source' => 'broadcast', 'broadcast_id' => $campaign->id]);
+            $sent += $result['sent'] ? 1 : 0;
+            $failed += $result['sent'] ? 0 : 1;
+
+            DB::table('broadcasts')->insert([
+                'campaign_id' => $campaign->id,
+                'contact_id' => $contact->id,
+                'status' => $result['sent'] ? 'sent' : 'failed',
+                'body' => $body,
+                'variables' => json_encode(['name' => $contact->name, 'phone_number' => $contact->phone_number, 'error' => $result['error']]),
+                'attempts' => 1,
+                'sent_at' => $result['sent'] ? now() : null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        DB::table('broadcast_campaigns')->where('id', $campaign->id)->update([
+            'status' => $failed > 0 && $sent === 0 ? 'failed' : 'sent',
+            'audience_count' => $contacts->count(),
+            'sent_count' => $sent,
+            'delivered_count' => $sent,
+            'completed_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $this->activity($workspaceId, 'broadcast.sent', "Broadcast {$campaign->name} sent to {$sent} contacts.");
+
+        return back()->with($sent > 0 ? 'success' : 'error', $sent > 0 ? "Broadcast sent to {$sent} contacts. Failed: {$failed}." : 'Broadcast failed for all contacts. Check WhatsApp account credentials.');
+    }
+
+    public function deleteBroadcast(Request $request, int $broadcast): RedirectResponse
+    {
+        DB::table('broadcast_campaigns')->where('id', $broadcast)->where('workspace_id', $this->workspaceId($request))->delete();
+
+        return back()->with('success', 'Broadcast campaign deleted.');
     }
 
     public function training(Request $request): RedirectResponse
@@ -793,29 +1024,214 @@ class DashboardActionController extends Controller
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'type' => ['required', 'in:document,url,faq'],
+            'content' => ['nullable', 'string', 'max:20000'],
+            'source_url' => ['nullable', 'url', 'max:500'],
         ]);
+        if ($data['type'] === 'url' && empty($data['source_url'])) {
+            return back()->withErrors(['source_url' => 'Source URL is required for URL training.']);
+        }
+        if (in_array($data['type'], ['document', 'faq'], true) && empty($data['content'])) {
+            return back()->withErrors(['content' => 'Training content is required.']);
+        }
+        $workspaceId = $this->workspaceId($request);
+        $content = (string) ($data['content'] ?? $data['source_url'] ?? '');
+        $chunks = $this->estimateChunks($content);
         DB::table('ai_training_sources')->insert([
-            ...$data,
-            'workspace_id' => $this->workspaceId($request),
+            'workspace_id' => $workspaceId,
+            'title' => $data['title'],
+            'type' => $data['type'],
+            'content' => $data['content'] ?? null,
+            'source_url' => $data['source_url'] ?? null,
             'status' => 'indexed',
-            'chunks_count' => 0,
+            'chunks_count' => $chunks,
             'trained_at' => now(),
+            'metadata' => json_encode(['characters' => strlen($content), 'words' => str_word_count(strip_tags($content))]),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $this->refreshAiPrompt($workspaceId);
+        $this->activity($workspaceId, 'training.indexed', 'AI training indexed: '.$data['title']);
 
-        return back()->with('success', 'Training source added.');
+        return back()->with('success', "Training source indexed with {$chunks} chunks.");
+    }
+
+    public function reindexTraining(Request $request, int $source): RedirectResponse
+    {
+        $workspaceId = $this->workspaceId($request);
+        $record = DB::table('ai_training_sources')->where('id', $source)->where('workspace_id', $workspaceId)->first();
+        abort_unless($record, 404);
+
+        $content = (string) ($record->content ?? $record->source_url ?? '');
+        $chunks = $this->estimateChunks($content);
+        DB::table('ai_training_sources')->where('id', $record->id)->update([
+            'status' => 'indexed',
+            'chunks_count' => $chunks,
+            'trained_at' => now(),
+            'metadata' => json_encode(['characters' => strlen($content), 'words' => str_word_count(strip_tags($content)), 'reindexed_at' => now()->toIso8601String()]),
+            'updated_at' => now(),
+        ]);
+        $this->refreshAiPrompt($workspaceId);
+
+        return back()->with('success', "Training source reindexed with {$chunks} chunks.");
+    }
+
+    public function deleteTraining(Request $request, int $source): RedirectResponse
+    {
+        $workspaceId = $this->workspaceId($request);
+        DB::table('ai_training_sources')->where('id', $source)->where('workspace_id', $workspaceId)->delete();
+        $this->refreshAiPrompt($workspaceId);
+
+        return back()->with('success', 'Training source deleted and AI prompt refreshed.');
     }
 
     public function integration(Request $request): RedirectResponse
     {
-        $data = $request->validate(['provider' => ['required', 'string', 'max:80']]);
+        $provider = Str::slug((string) $request->input('provider'), '_');
+        $allowed = ['shopify', 'woocommerce', 'zapier', 'stripe', 'telegram', 'slack', 'google_sheets'];
+        if (! in_array($provider, $allowed, true)) {
+            return back()->withErrors(['provider' => 'Please select a valid integration provider.']);
+        }
+
+        $rules = ['provider' => ['required', 'in:'.implode(',', $allowed)]];
+        $required = match ($provider) {
+            'shopify' => ['shop_domain', 'access_token'],
+            'woocommerce' => ['site_url', 'consumer_key', 'consumer_secret'],
+            'zapier' => ['webhook_url'],
+            'stripe' => ['secret_key'],
+            'telegram' => ['bot_token'],
+            'slack' => ['bot_token'],
+            'google_sheets' => ['spreadsheet_id', 'service_account_email', 'private_key'],
+            default => [],
+        };
+        foreach ($required as $field) {
+            $rules[$field] = ['required', 'string', 'max:5000'];
+        }
+        if ($provider === 'telegram') {
+            $rules['chat_id'] = ['nullable', 'string', 'max:255'];
+        }
+
+        $attributes = [
+            'shop_domain' => 'Shopify shop domain',
+            'access_token' => 'Shopify admin access token',
+            'site_url' => 'WooCommerce store URL',
+            'consumer_key' => 'WooCommerce consumer key',
+            'consumer_secret' => 'WooCommerce consumer secret',
+            'webhook_url' => 'Zapier webhook URL',
+            'secret_key' => 'Stripe secret key',
+            'bot_token' => Str::headline($provider).' bot token',
+            'chat_id' => 'Telegram chat ID',
+            'spreadsheet_id' => 'Google spreadsheet ID',
+            'service_account_email' => 'Google service account email',
+            'private_key' => 'Google private key',
+        ];
+
+        $data = $request->validate($rules, [], $attributes);
+        unset($data['provider']);
+
+        $credentials = collect($data)
+            ->mapWithKeys(fn ($value, $key) => [$key => Crypt::encryptString((string) $value)])
+            ->all();
+        $test = $this->testIntegrationConnection($provider, $data);
+        $status = $test['ok'] ? 'connected' : 'connection_failed';
+        $settings = [
+            'label' => Str::headline($provider),
+            'last_tested_at' => now()->toIso8601String(),
+            'test_message' => $test['message'],
+            'credential_keys' => array_keys($data),
+        ];
+
         DB::table('connected_integrations')->updateOrInsert(
-            ['workspace_id' => $this->workspaceId($request), 'provider' => Str::slug($data['provider'], '_')],
-            ['status' => 'connected', 'settings' => json_encode([]), 'last_synced_at' => now(), 'created_at' => now(), 'updated_at' => now()]
+            ['workspace_id' => $this->workspaceId($request), 'provider' => $provider],
+            [
+                'status' => $status,
+                'credentials' => json_encode($credentials),
+                'settings' => json_encode($settings),
+                'last_synced_at' => $test['ok'] ? now() : null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]
         );
 
-        return back()->with('success', 'Integration connected.');
+        return back()->with($test['ok'] ? 'success' : 'error', $test['message']);
+    }
+
+    private function testIntegrationConnection(string $provider, array $credentials): array
+    {
+        try {
+            $http = Http::timeout(15)->connectTimeout(10)->withOptions(['proxy' => '']);
+            $response = match ($provider) {
+                'shopify' => $http
+                    ->withHeaders(['X-Shopify-Access-Token' => $credentials['access_token']])
+                    ->get('https://'.preg_replace('#^https?://#', '', rtrim($credentials['shop_domain'], '/')).'/admin/api/2024-10/shop.json'),
+                'woocommerce' => $http->get(rtrim($credentials['site_url'], '/').'/wp-json/wc/v3/system_status', [
+                    'consumer_key' => $credentials['consumer_key'],
+                    'consumer_secret' => $credentials['consumer_secret'],
+                ]),
+                'zapier' => $http->post($credentials['webhook_url'], [
+                    'source' => 'ChatFlow AI',
+                    'event' => 'integration_test',
+                    'tested_at' => now()->toIso8601String(),
+                ]),
+                'stripe' => $http
+                    ->withBasicAuth($credentials['secret_key'], '')
+                    ->get('https://api.stripe.com/v1/account'),
+                'telegram' => $http->get('https://api.telegram.org/bot'.$credentials['bot_token'].'/getMe'),
+                'slack' => $http
+                    ->withToken($credentials['bot_token'])
+                    ->asForm()
+                    ->post('https://slack.com/api/auth.test'),
+                'google_sheets' => null,
+                default => null,
+            };
+
+            if ($provider === 'google_sheets') {
+                $valid = str_contains($credentials['service_account_email'], '@')
+                    && str_contains($credentials['private_key'], 'BEGIN PRIVATE KEY')
+                    && filled($credentials['spreadsheet_id']);
+
+                return [
+                    'ok' => $valid,
+                    'message' => $valid
+                        ? 'Google Sheets credentials saved. Share the sheet with the service account email to allow access.'
+                        : 'Google Sheets credentials are incomplete or invalid.',
+                ];
+            }
+
+            if (! $response) {
+                return ['ok' => false, 'message' => 'Unsupported integration provider.'];
+            }
+
+            $ok = $provider === 'slack'
+                ? (bool) $response->json('ok')
+                : $response->successful();
+
+            return [
+                'ok' => $ok,
+                'message' => $ok
+                    ? Str::headline($provider).' connected and tested successfully.'
+                    : Str::headline($provider).' connection failed: '.$this->integrationErrorMessage($response->json() ?: $response->body()),
+            ];
+        } catch (\Throwable $exception) {
+            return [
+                'ok' => false,
+                'message' => Str::headline($provider).' connection failed: '.$exception->getMessage(),
+            ];
+        }
+    }
+
+    private function integrationErrorMessage(mixed $error): string
+    {
+        if (is_array($error)) {
+            return (string) (
+                data_get($error, 'error.message')
+                ?? data_get($error, 'error_description')
+                ?? data_get($error, 'message')
+                ?? data_get($error, 'errors.0.message')
+                ?? json_encode($error)
+            );
+        }
+
+        return Str::limit((string) $error, 220);
     }
 
     public function apiKey(Request $request): RedirectResponse
@@ -826,6 +1242,8 @@ class DashboardActionController extends Controller
             'workspace_id' => $this->workspaceId($request),
             'name' => $data['name'],
             'token_hash' => hash('sha256', $token),
+            'encrypted_token' => Crypt::encryptString($token),
+            'token_preview' => substr($token, 0, 8).'...'.substr($token, -6),
             'abilities' => json_encode(['read', 'write']),
             'created_at' => now(),
             'updated_at' => now(),
@@ -908,6 +1326,181 @@ class DashboardActionController extends Controller
             ->value('id');
 
         return $account ? (int) $account : null;
+    }
+
+    private function findOrCreateConversation(int $workspaceId, ?int $accountId, int $contactId): int
+    {
+        $conversationId = DB::table('conversations')
+            ->where('workspace_id', $workspaceId)
+            ->where('contact_id', $contactId)
+            ->value('id');
+
+        if ($conversationId) {
+            return (int) $conversationId;
+        }
+
+        $accountId ??= (int) DB::table('whatsapp_accounts')->where('workspace_id', $workspaceId)->latest()->value('id');
+        if (! $accountId) {
+            $accountId = DB::table('whatsapp_accounts')->insertGetId([
+                'workspace_id' => $workspaceId,
+                'name' => 'Main Business',
+                'phone_number' => '+92 300 0000000',
+                'provider' => 'meta',
+                'status' => 'pending_setup',
+                'quality_rating' => 'high',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        return DB::table('conversations')->insertGetId([
+            'workspace_id' => $workspaceId,
+            'whatsapp_account_id' => $accountId,
+            'contact_id' => $contactId,
+            'status' => 'open',
+            'priority' => 'normal',
+            'unread_count' => 0,
+            'last_message_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function createAndSendOutboundText(int $conversationId, string $body, bool $aiGenerated = false, array $extraMetadata = []): array
+    {
+        $messageId = DB::table('messages')->insertGetId([
+            'conversation_id' => $conversationId,
+            'direction' => 'outbound',
+            'sender_type' => $aiGenerated ? 'ai' : 'agent',
+            'body' => $body,
+            'message_type' => 'text',
+            'status' => 'sent',
+            'ai_generated' => $aiGenerated,
+            'metadata' => json_encode($extraMetadata),
+            'sent_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $record = DB::table('conversations')
+            ->join('contacts', 'contacts.id', '=', 'conversations.contact_id')
+            ->join('whatsapp_accounts', 'whatsapp_accounts.id', '=', 'conversations.whatsapp_account_id')
+            ->where('conversations.id', $conversationId)
+            ->select('contacts.phone_number as contact_phone', 'contacts.status as contact_status', 'conversations.status as conversation_status', 'whatsapp_accounts.settings as account_settings')
+            ->first();
+
+        if (($record?->contact_status === 'blocked') || ($record?->conversation_status === 'blocked')) {
+            DB::table('messages')->where('id', $messageId)->update([
+                'status' => 'failed',
+                'metadata' => json_encode($extraMetadata + ['error' => 'Contact is blocked.']),
+                'updated_at' => now(),
+            ]);
+
+            return ['sent' => false, 'message_id' => $messageId, 'error' => 'Contact is blocked.'];
+        }
+
+        $settings = json_decode($record->account_settings ?? '{}', true) ?: [];
+        $token = $settings['access_token'] ?? null;
+        $phoneNumberId = $settings['phone_number_id'] ?? null;
+
+        if (! $token || ! $phoneNumberId) {
+            DB::table('messages')->where('id', $messageId)->update([
+                'status' => 'failed',
+                'metadata' => json_encode($extraMetadata + ['provider' => 'meta', 'error' => 'WhatsApp account is not connected.']),
+                'updated_at' => now(),
+            ]);
+            DB::table('conversations')->where('id', $conversationId)->update(['last_message_at' => now(), 'updated_at' => now()]);
+
+            return ['sent' => false, 'message_id' => $messageId, 'error' => 'WhatsApp account is not connected.'];
+        }
+
+        try {
+            $response = Http::withToken($token)
+                ->timeout(15)
+                ->connectTimeout(10)
+                ->withOptions(['proxy' => ''])
+                ->post("https://graph.facebook.com/v20.0/{$phoneNumberId}/messages", [
+                    'messaging_product' => 'whatsapp',
+                    'to' => preg_replace('/\D+/', '', $this->normalizePhoneNumber($record->contact_phone)),
+                    'type' => 'text',
+                    'text' => ['body' => $body],
+                ]);
+
+            DB::table('messages')->where('id', $messageId)->update([
+                'status' => $response->successful() ? 'sent' : 'failed',
+                'metadata' => json_encode($extraMetadata + [
+                    'provider' => 'meta',
+                    'provider_message_id' => $response->json('messages.0.id'),
+                    'error' => $response->successful() ? null : $response->json(),
+                ]),
+                'updated_at' => now(),
+            ]);
+            DB::table('conversations')->where('id', $conversationId)->update(['last_message_at' => now(), 'updated_at' => now()]);
+
+            return ['sent' => $response->successful(), 'message_id' => $messageId, 'error' => $response->successful() ? null : json_encode($response->json())];
+        } catch (\Illuminate\Http\Client\ConnectionException $exception) {
+            DB::table('messages')->where('id', $messageId)->update([
+                'status' => 'failed',
+                'metadata' => json_encode($extraMetadata + ['provider' => 'meta', 'error' => $exception->getMessage()]),
+                'updated_at' => now(),
+            ]);
+            DB::table('conversations')->where('id', $conversationId)->update(['last_message_at' => now(), 'updated_at' => now()]);
+
+            return ['sent' => false, 'message_id' => $messageId, 'error' => $exception->getMessage()];
+        }
+    }
+
+    private function renderBroadcastBody(string $body, object $contact): string
+    {
+        return str_replace(
+            ['{{name}}', '{{phone}}', '{{status}}'],
+            [(string) $contact->name, (string) $contact->phone_number, Str::headline((string) $contact->status)],
+            $body
+        );
+    }
+
+    private function estimateChunks(string $content): int
+    {
+        $characters = max(1, strlen(trim(strip_tags($content))));
+
+        return max(1, (int) ceil($characters / 900));
+    }
+
+    private function refreshAiPrompt(int $workspaceId): void
+    {
+        $sources = DB::table('ai_training_sources')
+            ->where('workspace_id', $workspaceId)
+            ->where('status', 'indexed')
+            ->latest('trained_at')
+            ->limit(12)
+            ->get()
+            ->map(fn ($source) => "Source: {$source->title}\n".Str::limit((string) ($source->content ?: $source->source_url), 1200))
+            ->implode("\n\n");
+
+        DB::table('ai_prompts')->updateOrInsert(
+            ['workspace_id' => $workspaceId, 'type' => 'reply'],
+            [
+                'name' => 'Workspace AI Knowledge',
+                'tone' => 'friendly',
+                'system_prompt' => trim("You are ChatFlow AI. Reply concisely using this business knowledge when relevant.\n\n".$sources),
+                'is_active' => true,
+                'settings' => json_encode(['generated_from_training' => true, 'refreshed_at' => now()->toIso8601String()]),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]
+        );
+    }
+
+    private function activity(int $workspaceId, string $type, string $description, array $properties = []): void
+    {
+        DB::table('activity_logs')->insert([
+            'workspace_id' => $workspaceId,
+            'type' => $type,
+            'description' => $description,
+            'properties' => json_encode($properties),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     private function normalizePhoneNumber(string $phone, string $countryCode = '+92'): string

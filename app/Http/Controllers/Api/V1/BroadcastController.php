@@ -20,7 +20,9 @@ class BroadcastController extends Controller
     {
         $campaign = BroadcastCampaign::query()->create($request->validate([
             'name' => ['required', 'string', 'max:255'],
+            'body' => ['required', 'string', 'max:2000'],
             'status' => ['nullable', 'string', 'max:60'],
+            'audience_filter' => ['nullable', 'array'],
             'audience_count' => ['nullable', 'integer', 'min:0'],
             'scheduled_at' => ['nullable', 'date'],
         ]) + ['workspace_id' => $request->attributes->get('workspace_id')]);
@@ -39,7 +41,7 @@ class BroadcastController extends Controller
     {
         abort_unless($broadcast->workspace_id === (int) $request->attributes->get('workspace_id'), 404);
 
-        $broadcast->update($request->only(['name', 'status', 'audience_count', 'scheduled_at']));
+        $broadcast->update($request->only(['name', 'body', 'status', 'audience_filter', 'audience_count', 'scheduled_at']));
 
         return $this->success($broadcast->fresh(), 'Broadcast campaign updated successfully');
     }

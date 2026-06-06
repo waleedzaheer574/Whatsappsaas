@@ -41,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import { AlertTriangle, CheckCircle2, X } from 'lucide-vue-next';
 
@@ -85,6 +85,14 @@ function pushToast(type: ToastType, message: string) {
 function dismiss(id: number) {
   toasts.value = toasts.value.filter((toast) => toast.id !== id);
 }
+
+function handleToastEvent(event: Event) {
+  const detail = (event as CustomEvent<{ type?: ToastType; message?: string }>).detail ?? {};
+  pushToast(detail.type === 'error' ? 'error' : 'success', detail.message ?? '');
+}
+
+onMounted(() => window.addEventListener('chatflow:toast', handleToastEvent));
+onUnmounted(() => window.removeEventListener('chatflow:toast', handleToastEvent));
 
 watch(flashSuccess, (message) => pushToast('success', message), { immediate: true });
 watch(flashError, (message) => pushToast('error', message), { immediate: true });

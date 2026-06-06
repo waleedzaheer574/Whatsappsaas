@@ -420,8 +420,15 @@ Content-Type: application/json</pre>
                 <td>{{ row.updated }}</td>
                 <td>
                   <div class="flex flex-wrap gap-2">
+                    <button v-if="screen === 'API Keys'" class="rounded-lg bg-violet-50 px-3 py-1 text-xs font-black text-violet-700 transition hover:bg-violet-100 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20" type="button" @click="copyApiKey(row.raw)">Copy</button>
+                    <button v-if="screen === 'AI Automations'" class="rounded-lg bg-violet-50 px-3 py-1 text-xs font-black text-violet-700 transition hover:bg-violet-100 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20" type="button" @click="toggleAutomation(row.raw)">{{ row.raw?.status === 'active' ? 'Pause' : 'Activate' }}</button>
+                    <button v-if="screen === 'Broadcast Campaigns'" class="rounded-lg bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700 transition hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-200 dark:hover:bg-emerald-500/20" type="button" @click="sendBroadcast(row.raw)">Send</button>
+                    <button v-if="screen === 'AI Training'" class="rounded-lg bg-violet-50 px-3 py-1 text-xs font-black text-violet-700 transition hover:bg-violet-100 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20" type="button" @click="reindexTraining(row.raw)">Reindex</button>
+                    <button v-if="screen === 'Team Management'" class="rounded-lg bg-violet-50 px-3 py-1 text-xs font-black text-violet-700 transition hover:bg-violet-100 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20" type="button" @click="changeTeamRole(row.raw, nextTeamRole(row.raw?.role))">Make {{ cleanStatus(nextTeamRole(row.raw?.role)) }}</button>
                     <button class="rounded-lg bg-slate-100 px-3 py-1 text-xs font-black transition hover:bg-violet-100 hover:text-violet-700 dark:bg-white/10 dark:hover:bg-violet-500/20 dark:hover:text-violet-200" type="button" @click="openRecord(row)">View</button>
                     <button v-if="screen === 'WhatsApp Accounts'" class="rounded-lg bg-red-50 px-3 py-1 text-xs font-black text-red-600 transition hover:bg-red-100 dark:bg-red-500/10 dark:text-red-200 dark:hover:bg-red-500/20" type="button" @click="deleteWhatsAppAccount(row.raw?.id)">Delete</button>
+                    <button v-if="['AI Automations', 'Broadcast Campaigns', 'AI Training'].includes(screen)" class="rounded-lg bg-red-50 px-3 py-1 text-xs font-black text-red-600 transition hover:bg-red-100 dark:bg-red-500/10 dark:text-red-200 dark:hover:bg-red-500/20" type="button" @click="deleteModuleRecord(row.raw)">Delete</button>
+                    <button v-if="screen === 'Team Management'" class="rounded-lg bg-red-50 px-3 py-1 text-xs font-black text-red-600 transition hover:bg-red-100 dark:bg-red-500/10 dark:text-red-200 dark:hover:bg-red-500/20" type="button" @click="removeTeamMember(row.raw)">Remove</button>
                   </div>
                 </td>
               </tr>
@@ -831,10 +838,6 @@ Content-Type: application/json</pre>
           </div>
         </div>
 
-        <div class="mt-5 rounded-2xl border border-slate-200 p-4 dark:border-white/10">
-          <h3 class="text-sm font-black">Raw Record</h3>
-          <pre class="app-scrollbar mt-3 max-h-64 overflow-auto rounded-xl bg-slate-950 p-4 text-xs text-slate-100">{{ prettyRecord(viewRecord.raw) }}</pre>
-        </div>
       </section>
     </div>
 
@@ -961,9 +964,17 @@ const moduleForm = useForm<Record<string, any>>({
   plan: 'pro',
   role: 'agent',
   trigger: '',
+  action_type: 'send_ai_reply',
+  reply_template: '',
+  update_contact_status: 'interested',
+  body: '',
+  audience_status: 'all',
   audience_count: 100,
+  scheduled_at: '',
   title: '',
   type: 'document',
+  content: '',
+  source_url: '',
   provider: 'shopify',
   phone_number_id: '',
   access_token: '',
@@ -1431,6 +1442,8 @@ const filteredTableRows = computed(() => {
 const recordDetailFields = computed(() => {
   if (!viewRecord.value) return [];
   const raw = viewRecord.value.raw ?? {};
+  const audienceFilter = parseJsonObject(raw.audience_filter);
+  const flow = parseJsonObject(raw.flow);
   const fields = [
     ['Name', viewRecord.value.name],
     ['Status', viewRecord.value.status],
@@ -1441,6 +1454,15 @@ const recordDetailFields = computed(() => {
     ['Plan', raw.plan],
     ['Role', raw.role],
     ['Provider', raw.provider],
+    ['Trigger', raw.trigger],
+    ['Action', Array.isArray(flow.actions) ? flow.actions.map((action: Row) => cleanStatus(action.type)).join(', ') : null],
+    ['Body', raw.body],
+    ['Audience', audienceFilter.status ? cleanStatus(audienceFilter.status) : null],
+    ['Sent', raw.sent_count],
+    ['Delivered', raw.delivered_count],
+    ['Chunks', raw.chunks_count],
+    ['Source URL', raw.source_url],
+    ['Trained', raw.trained_at ? new Date(raw.trained_at).toLocaleString() : null],
     ['Value', raw.deal_value ?? raw.value],
     ['Created', raw.created_at ? new Date(raw.created_at).toLocaleString() : null],
   ];
@@ -1525,22 +1547,41 @@ const formConfig: Row = {
     fields: [
       { name: 'name', label: 'Automation Name', placeholder: 'Price reply flow' },
       { name: 'trigger', label: 'Trigger Keyword', placeholder: 'price' },
+      { name: 'action_type', label: 'Action', options: [
+        { label: 'Send AI Reply', value: 'send_ai_reply' },
+        { label: 'Send Template Reply', value: 'send_template' },
+        { label: 'Update Contact Status', value: 'update_status' },
+        { label: 'Add Internal Note', value: 'add_note' },
+      ] },
+      { name: 'reply_template', label: 'Reply / Note Text', type: 'textarea', placeholder: 'Hi {{name}}, thanks for your message. Our team will help you shortly.' },
+      { name: 'update_contact_status', label: 'Move Contact To', options: ['new_lead', 'interested', 'follow_up', 'won', 'lost', 'blocked'] },
     ],
-    defaults: {},
+    defaults: { action_type: 'send_ai_reply', update_contact_status: 'interested' },
   },
   'Broadcast Campaigns': {
     route: '/app/broadcasts',
     fields: [
       { name: 'name', label: 'Campaign Name', placeholder: 'June Promo' },
+      { name: 'body', label: 'Message Body', type: 'textarea', placeholder: 'Hi {{name}}, our new offer is live. Reply YES for details.' },
+      { name: 'audience_status', label: 'Audience', options: [
+        { label: 'All Active Contacts', value: 'all' },
+        { label: 'New Leads', value: 'new_lead' },
+        { label: 'Interested', value: 'interested' },
+        { label: 'Follow Up', value: 'follow_up' },
+        { label: 'Won Customers', value: 'won' },
+      ] },
       { name: 'audience_count', label: 'Audience Count', type: 'number', placeholder: '1000' },
+      { name: 'scheduled_at', label: 'Schedule At', type: 'datetime-local', placeholder: 'Optional' },
     ],
-    defaults: { audience_count: 100 },
+    defaults: { audience_count: 100, audience_status: 'all' },
   },
   'AI Training': {
     route: '/app/training',
     fields: [
       { name: 'title', label: 'Source Title', placeholder: 'Product FAQ' },
       { name: 'type', label: 'Type', options: ['document', 'url', 'faq'] },
+      { name: 'content', label: 'Knowledge Content', type: 'textarea', placeholder: 'Add FAQs, product info, pricing, policies, delivery details, support rules...' },
+      { name: 'source_url', label: 'Source URL', type: 'url', placeholder: 'https://example.com/help' },
     ],
     defaults: { type: 'document' },
   },
@@ -1584,6 +1625,16 @@ function initial(name: string) {
 
 function cleanStatus(status?: string) {
   return (status ?? 'connected').replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function parseJsonObject(value: unknown): Row {
+  if (!value) return {};
+  if (typeof value === 'object') return value as Row;
+  try {
+    return JSON.parse(String(value));
+  } catch {
+    return {};
+  }
 }
 
 function optionValue(option: Row | string) {
@@ -1968,6 +2019,95 @@ function openModuleCard(card: Row) {
 
 function closeRecord() {
   viewRecord.value = null;
+}
+
+async function copyApiKey(row: Row) {
+  if (!row?.plain_token) {
+    window.dispatchEvent(new CustomEvent('chatflow:toast', {
+      detail: { type: 'error', message: 'This old API key cannot be copied because only its secure hash was stored. Create a new API key to enable copy.' },
+    }));
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(row.plain_token);
+    window.dispatchEvent(new CustomEvent('chatflow:toast', {
+      detail: { type: 'success', message: 'API key copied.' },
+    }));
+  } catch {
+    window.prompt('Copy API key:', row.plain_token);
+  }
+}
+
+function toggleAutomation(row: Row) {
+  if (!row?.id) return;
+  router.post(`/app/automations/${row.id}/toggle`, {}, {
+    preserveScroll: true,
+    preserveState: true,
+    only: ['dashboard', 'module', 'flash'],
+  });
+}
+
+function sendBroadcast(row: Row) {
+  if (!row?.id) return;
+  if (!confirm('Send this broadcast to the selected audience now?')) return;
+  router.post(`/app/broadcasts/${row.id}/send`, {}, {
+    preserveScroll: true,
+    preserveState: true,
+    only: ['dashboard', 'module', 'flash'],
+  });
+}
+
+function reindexTraining(row: Row) {
+  if (!row?.id) return;
+  router.post(`/app/training/${row.id}/reindex`, {}, {
+    preserveScroll: true,
+    preserveState: true,
+    only: ['dashboard', 'module', 'flash'],
+  });
+}
+
+function deleteModuleRecord(row: Row) {
+  if (!row?.id) return;
+  const routes: Row = {
+    'AI Automations': `/app/automations/${row.id}`,
+    'Broadcast Campaigns': `/app/broadcasts/${row.id}`,
+    'AI Training': `/app/training/${row.id}`,
+  };
+  const route = routes[props.screen];
+  if (!route) return;
+  if (!confirm(`Delete ${row.name ?? row.title ?? 'this record'}?`)) return;
+  router.delete(route, {
+    preserveScroll: true,
+    preserveState: true,
+    only: ['dashboard', 'module', 'flash'],
+  });
+}
+
+function nextTeamRole(role?: string) {
+  if (role === 'viewer') return 'agent';
+  if (role === 'agent') return 'manager';
+  if (role === 'manager') return 'viewer';
+  return 'agent';
+}
+
+function changeTeamRole(row: Row, role: string) {
+  if (!row?.id) return;
+  router.post(`/app/team/${row.id}/role`, { role }, {
+    preserveScroll: true,
+    preserveState: true,
+    only: ['dashboard', 'module', 'flash', 'errors'],
+  });
+}
+
+function removeTeamMember(row: Row) {
+  if (!row?.id) return;
+  if (!confirm(`Remove ${row.name ?? row.email ?? 'this team member'} from workspace?`)) return;
+  router.delete(`/app/team/${row.id}`, {
+    preserveScroll: true,
+    preserveState: true,
+    only: ['dashboard', 'module', 'flash'],
+  });
 }
 
 function prettyRecord(row: Row) {
