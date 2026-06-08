@@ -1849,6 +1849,23 @@ function isBlocked(row?: Row | null) {
   return row?.status === 'blocked' || row?.contact_status === 'blocked';
 }
 
+function showToast(type: 'success' | 'error', message: string) {
+  const handler = (window as any).chatflowToast;
+  if (typeof handler === 'function') {
+    handler(type, message);
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent('chatflow:toast', { detail: { type, message } }));
+}
+
+async function confirmAction(message: string, title = 'Confirm action') {
+  const handler = (window as any).chatflowConfirm;
+  if (typeof handler === 'function') return await handler(message, title);
+  window.dispatchEvent(new CustomEvent('chatflow:toast', { detail: { type: 'error', message: 'Confirmation dialog is not ready yet. Please try again.' } }));
+  return false;
+}
+
 function pipelineFor(status: string) {
   return crmContacts.value.filter((contact: Row) => (contact.status ?? contact.stage ?? 'new_lead') === status);
 }
@@ -1865,11 +1882,11 @@ function moveContact(contact: Row, status: string) {
   stageForm.post(`/app/contacts/${contact.id}/stage`, { preserveScroll: true });
 }
 
-function toggleContactBlock(contact: Row) {
+async function toggleContactBlock(contact: Row) {
   const contactId = contact.contact_id ?? contact.id;
   if (!contactId) return;
   const blocked = !isBlocked(contact);
-  if (!confirm(blocked ? 'Block this contact? New messages from this contact will be ignored.' : 'Unblock this contact?')) return;
+  if (!await confirmAction(blocked ? 'Block this contact? New messages from this contact will be ignored.' : 'Unblock this contact?', blocked ? 'Block contact' : 'Unblock contact')) return;
   router.post(`/app/contacts/${contactId}/block`, { blocked }, {
     preserveScroll: true,
     preserveState: true,
@@ -2050,8 +2067,8 @@ function sendMessage() {
   });
 }
 
-function deleteChat(conversationId: number | string) {
-  if (!conversationId || !confirm('Delete this chat and all messages?')) return;
+async function deleteChat(conversationId: number | string) {
+  if (!conversationId || !await confirmAction('Delete this chat and all messages?', 'Delete chat')) return;
   router.delete(`/app/conversations/${conversationId}`, {
     preserveScroll: true,
     onSuccess: () => {
@@ -2060,8 +2077,8 @@ function deleteChat(conversationId: number | string) {
   });
 }
 
-function clearChat(conversationId: number | string) {
-  if (!conversationId || !confirm('Clear all messages in this chat?')) return;
+async function clearChat(conversationId: number | string) {
+  if (!conversationId || !await confirmAction('Clear all messages in this chat?', 'Clear chat')) return;
   router.post(`/app/conversations/${conversationId}/clear`, {}, {
     preserveScroll: true,
     preserveState: true,
@@ -2073,8 +2090,8 @@ function clearChat(conversationId: number | string) {
   });
 }
 
-function deleteMessage(messageId: number | string) {
-  if (!messageId || !confirm('Delete this message?')) return;
+async function deleteMessage(messageId: number | string) {
+  if (!messageId || !await confirmAction('Delete this message?', 'Delete message')) return;
   router.delete(`/app/messages/${messageId}`, { preserveScroll: true });
 }
 
@@ -2086,7 +2103,7 @@ function canEditMessage(message: Row) {
 
 function startEditMessage(message: Row) {
   if (!canEditMessage(message)) {
-    alert('Edit time expired. You can edit your sent messages within 5 minutes only.');
+    showToast('error', 'Edit time expired. You can edit your sent messages within 5 minutes only.');
     return;
   }
   editingMessageId.value = message.id;
@@ -2118,13 +2135,13 @@ function saveEditedMessage() {
   });
 }
 
-function deleteContact(contactId: number | string) {
-  if (!contactId || !confirm('Delete this contact and related chat?')) return;
+async function deleteContact(contactId: number | string) {
+  if (!contactId || !await confirmAction('Delete this contact and related chat?', 'Delete contact')) return;
   router.delete(`/app/contacts/${contactId}`, { preserveScroll: true });
 }
 
-function deleteWhatsAppAccount(accountId?: number | string) {
-  if (!accountId || !confirm('Delete this WhatsApp account? Related chats for this account will also be removed.')) return;
+async function deleteWhatsAppAccount(accountId?: number | string) {
+  if (!accountId || !await confirmAction('Delete this WhatsApp account? Related chats for this account will also be removed.', 'Delete WhatsApp account')) return;
   router.delete(`/app/whatsapp-accounts/${accountId}`, {
     preserveScroll: true,
     preserveState: true,
@@ -2239,7 +2256,7 @@ async function copyApiKey(row: Row) {
       detail: { type: 'success', message: 'API key copied.' },
     }));
   } catch {
-    window.prompt('Copy API key:', row.plain_token);
+    showToast('error', 'Clipboard permission was blocked. Please allow clipboard access and try again.');
   }
 }
 
@@ -2252,9 +2269,9 @@ function toggleAutomation(row: Row) {
   });
 }
 
-function sendBroadcast(row: Row) {
+async function sendBroadcast(row: Row) {
   if (!row?.id) return;
-  if (!confirm('Send this broadcast to the selected audience now?')) return;
+  if (!await confirmAction('Send this broadcast to the selected audience now?', 'Send broadcast')) return;
   router.post(`/app/broadcasts/${row.id}/send`, {}, {
     preserveScroll: true,
     preserveState: true,
@@ -2271,7 +2288,7 @@ function reindexTraining(row: Row) {
   });
 }
 
-function deleteModuleRecord(row: Row) {
+async function deleteModuleRecord(row: Row) {
   if (!row?.id) return;
   const routes: Row = {
     'AI Automations': `/app/automations/${row.id}`,
@@ -2280,7 +2297,7 @@ function deleteModuleRecord(row: Row) {
   };
   const route = routes[props.screen];
   if (!route) return;
-  if (!confirm(`Delete ${row.name ?? row.title ?? 'this record'}?`)) return;
+  if (!await confirmAction(`Delete ${row.name ?? row.title ?? 'this record'}?`, 'Delete record')) return;
   router.delete(route, {
     preserveScroll: true,
     preserveState: true,
@@ -2304,9 +2321,9 @@ function changeTeamRole(row: Row, role: string) {
   });
 }
 
-function removeTeamMember(row: Row) {
+async function removeTeamMember(row: Row) {
   if (!row?.id) return;
-  if (!confirm(`Remove ${row.name ?? row.email ?? 'this team member'} from workspace?`)) return;
+  if (!await confirmAction(`Remove ${row.name ?? row.email ?? 'this team member'} from workspace?`, 'Remove team member')) return;
   router.delete(`/app/team/${row.id}`, {
     preserveScroll: true,
     preserveState: true,
@@ -2512,3 +2529,5 @@ const stripeTestCards = [
   { label: 'Declined payment', number: '4000 0000 0000 9995' },
 ];
 </script>
+
+

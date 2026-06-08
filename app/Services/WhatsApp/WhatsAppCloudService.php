@@ -3,6 +3,7 @@
 namespace App\Services\WhatsApp;
 
 use App\Models\WhatsAppAccount;
+use App\Support\PhoneNumber;
 use Illuminate\Support\Facades\Http;
 
 class WhatsAppCloudService
@@ -19,7 +20,7 @@ class WhatsAppCloudService
         return Http::withToken($token)
             ->post("https://graph.facebook.com/v20.0/{$phoneNumberId}/messages", [
                 'messaging_product' => 'whatsapp',
-                'to' => $to,
+                'to' => PhoneNumber::e164Digits($to),
                 'type' => 'text',
                 'text' => ['body' => $body],
             ])

@@ -3,6 +3,7 @@
 namespace App\Repositories;
 
 use App\Models\Contact;
+use App\Support\PhoneNumber;
 
 class ContactRepository
 {
@@ -33,11 +34,6 @@ class ContactRepository
 
     private function normalizePhone(string $phone): string
     {
-        $phone = trim($phone);
-        if ($phone === '') {
-            return $phone;
-        }
-
-        return str_starts_with($phone, '+') ? $phone : '+'.preg_replace('/\D+/', '', $phone);
+        return PhoneNumber::normalize($phone);
     }
 }

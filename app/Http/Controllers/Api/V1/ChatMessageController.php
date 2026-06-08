@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use App\Support\PhoneNumber;
 
 class ChatMessageController extends Controller
 {
@@ -133,11 +134,6 @@ class ChatMessageController extends Controller
 
     private function normalizePhone(string $phone): string
     {
-        $phone = trim($phone);
-        if (str_starts_with($phone, '+')) {
-            return '+'.preg_replace('/\D+/', '', $phone);
-        }
-
-        return preg_replace('/\D+/', '', $phone);
+        return PhoneNumber::normalize($phone);
     }
 }

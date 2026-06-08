@@ -5,6 +5,7 @@ namespace App\Services\Automation;
 use App\Models\AiAutomation;
 use App\Models\Conversation;
 use App\Services\AI\AiReplyService;
+use App\Support\PhoneNumber;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -118,7 +119,7 @@ class WorkflowEngine
                 ->withOptions(['proxy' => ''])
                 ->post("https://graph.facebook.com/v20.0/{$phoneNumberId}/messages", [
                     'messaging_product' => 'whatsapp',
-                    'to' => preg_replace('/\D+/', '', (string) $record->contact_phone),
+                    'to' => PhoneNumber::e164Digits((string) $record->contact_phone),
                     'type' => 'text',
                     'text' => ['body' => $body],
                 ]);

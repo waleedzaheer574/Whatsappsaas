@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use App\Support\PhoneNumber;
 
 class DashboardActionController extends Controller
 {
@@ -312,8 +313,12 @@ class DashboardActionController extends Controller
                 'messages.id',
                 'messages.direction',
                 'messages.created_at',
-                'messages.metadata'
+                'messages.metadata',
+                'contacts.phone_number as contact_phone',
+                'whatsapp_accounts.settings as account_settings'
             )
+            ->join('contacts', 'contacts.id', '=', 'conversations.contact_id')
+            ->join('whatsapp_accounts', 'whatsapp_accounts.id', '=', 'conversations.whatsapp_account_id')
             ->first();
 
         abort_unless($record, 404);
@@ -329,14 +334,52 @@ class DashboardActionController extends Controller
         $metadata = json_decode($record->metadata ?? '{}', true) ?: [];
         $metadata['edited'] = true;
         $metadata['edited_at'] = now()->toIso8601String();
+        $metadata['previous_provider_message_id'] = $metadata['provider_message_id'] ?? null;
+
+        $status = 'sent';
+        $settings = json_decode($record->account_settings ?? '{}', true) ?: [];
+        $token = $settings['access_token'] ?? null;
+        $phoneNumberId = $settings['phone_number_id'] ?? null;
+
+        if ($token && $phoneNumberId) {
+            try {
+                $response = Http::withToken($token)
+                    ->timeout(15)
+                    ->connectTimeout(10)
+                    ->withOptions(['proxy' => ''])
+                    ->post("https://graph.facebook.com/v20.0/{$phoneNumberId}/messages", [
+                        'messaging_product' => 'whatsapp',
+                        'to' => PhoneNumber::e164Digits((string) $record->contact_phone),
+                        'type' => 'text',
+                        'text' => ['body' => $data['body']],
+                    ]);
+
+                $status = $response->successful() ? 'sent' : 'failed';
+                $metadata['provider'] = 'meta';
+                $metadata['provider_message_id'] = $response->json('messages.0.id');
+                $metadata['error'] = $response->successful() ? null : $response->json();
+            } catch (\Illuminate\Http\Client\ConnectionException $exception) {
+                $status = 'failed';
+                $metadata['provider'] = 'meta';
+                $metadata['error'] = $exception->getMessage();
+            }
+        } else {
+            $status = 'failed';
+            $metadata['error'] = 'WhatsApp account is not connected.';
+        }
 
         DB::table('messages')->where('id', $message)->update([
             'body' => $data['body'],
+            'status' => $status,
             'metadata' => json_encode($metadata),
             'updated_at' => now(),
         ]);
 
-        return back()->with('success', 'Message edited successfully.');
+        if ($status === 'failed') {
+            return back()->with('error', 'Message edited in CRM, but Meta WhatsApp rejected the updated text.');
+        }
+
+        return back()->with('success', 'Message edited and sent to WhatsApp as a new corrected message.');
     }
 
     public function syncMessageStatuses(Request $request): RedirectResponse
@@ -1520,29 +1563,6 @@ class DashboardActionController extends Controller
 
     private function normalizePhoneNumber(string $phone, string $countryCode = '+92'): string
     {
-        $phone = trim($phone);
-        $countryCode = '+'.preg_replace('/\D+/', '', $countryCode);
-
-        if ($phone === '') {
-            return $countryCode;
-        }
-
-        if (str_starts_with($phone, '+')) {
-            return '+'.preg_replace('/\D+/', '', $phone);
-        }
-
-        $digits = preg_replace('/\D+/', '', $phone);
-        if (str_starts_with($digits, '00')) {
-            return '+'.substr($digits, 2);
-        }
-
-        $countryDigits = ltrim($countryCode, '+');
-        if (str_starts_with($digits, $countryDigits)) {
-            return '+'.$digits;
-        }
-
-        $digits = ltrim($digits, '0');
-
-        return $countryCode.$digits;
+        return PhoneNumber::normalize($phone, $countryCode);
     }
 }

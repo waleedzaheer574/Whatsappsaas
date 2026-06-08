@@ -1633,6 +1633,23 @@ function isBlocked(row?: Row | null) {
   return row?.status === 'blocked' || row?.contact_status === 'blocked';
 }
 
+function showToast(type: 'success' | 'error', message: string) {
+  const handler = (window as any).chatflowToast;
+  if (typeof handler === 'function') {
+    handler(type, message);
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent('chatflow:toast', { detail: { type, message } }));
+}
+
+async function confirmAction(message: string, title = 'Confirm action') {
+  const handler = (window as any).chatflowConfirm;
+  if (typeof handler === 'function') return await handler(message, title);
+  window.dispatchEvent(new CustomEvent('chatflow:toast', { detail: { type: 'error', message: 'Confirmation dialog is not ready yet. Please try again.' } }));
+  return false;
+}
+
 function pipelineFor(status: string) {
   return crmContacts.value.filter((contact: Row) => (contact.status ?? contact.stage ?? 'new_lead') === status);
 }
@@ -1649,11 +1666,11 @@ function moveContact(contact: Row, status: string) {
   stageForm.post(`/app/contacts/${contact.id}/stage`, { preserveScroll: true });
 }
 
-function toggleContactBlock(contact: Row) {
+async function toggleContactBlock(contact: Row) {
   const contactId = contact.contact_id ?? contact.id;
   if (!contactId) return;
   const blocked = !isBlocked(contact);
-  if (!confirm(blocked ? 'Block this contact? New messages from this contact will be ignored.' : 'Unblock this contact?')) return;
+  if (!await confirmAction(blocked ? 'Block this contact? New messages from this contact will be ignored.' : 'Unblock this contact?', blocked ? 'Block contact' : 'Unblock contact')) return;
   router.post(`/app/contacts/${contactId}/block`, { blocked }, {
     preserveScroll: true,
     preserveState: true,
@@ -1809,8 +1826,8 @@ function sendMessage() {
   });
 }
 
-function deleteChat(conversationId: number | string) {
-  if (!conversationId || !confirm('Delete this chat and all messages?')) return;
+async function deleteChat(conversationId: number | string) {
+  if (!conversationId || !await confirmAction('Delete this chat and all messages?', 'Delete chat')) return;
   router.delete(`/app/conversations/${conversationId}`, {
     preserveScroll: true,
     onSuccess: () => {
@@ -1819,8 +1836,8 @@ function deleteChat(conversationId: number | string) {
   });
 }
 
-function clearChat(conversationId: number | string) {
-  if (!conversationId || !confirm('Clear all messages in this chat?')) return;
+async function clearChat(conversationId: number | string) {
+  if (!conversationId || !await confirmAction('Clear all messages in this chat?', 'Clear chat')) return;
   router.post(`/app/conversations/${conversationId}/clear`, {}, {
     preserveScroll: true,
     preserveState: true,
@@ -1832,8 +1849,8 @@ function clearChat(conversationId: number | string) {
   });
 }
 
-function deleteMessage(messageId: number | string) {
-  if (!messageId || !confirm('Delete this message?')) return;
+async function deleteMessage(messageId: number | string) {
+  if (!messageId || !await confirmAction('Delete this message?', 'Delete message')) return;
   router.delete(`/app/messages/${messageId}`, { preserveScroll: true });
 }
 
@@ -1845,7 +1862,7 @@ function canEditMessage(message: Row) {
 
 function startEditMessage(message: Row) {
   if (!canEditMessage(message)) {
-    alert('Edit time expired. You can edit your sent messages within 5 minutes only.');
+    showToast('error', 'Edit time expired. You can edit your sent messages within 5 minutes only.');
     return;
   }
   editingMessageId.value = message.id;
@@ -1877,13 +1894,13 @@ function saveEditedMessage() {
   });
 }
 
-function deleteContact(contactId: number | string) {
-  if (!contactId || !confirm('Delete this contact and related chat?')) return;
+async function deleteContact(contactId: number | string) {
+  if (!contactId || !await confirmAction('Delete this contact and related chat?', 'Delete contact')) return;
   router.delete(`/app/contacts/${contactId}`, { preserveScroll: true });
 }
 
-function deleteWhatsAppAccount(accountId?: number | string) {
-  if (!accountId || !confirm('Delete this WhatsApp account? Related chats for this account will also be removed.')) return;
+async function deleteWhatsAppAccount(accountId?: number | string) {
+  if (!accountId || !await confirmAction('Delete this WhatsApp account? Related chats for this account will also be removed.', 'Delete WhatsApp account')) return;
   router.delete(`/app/whatsapp-accounts/${accountId}`, {
     preserveScroll: true,
     preserveState: true,
@@ -2152,3 +2169,5 @@ const stripeTestCards = [
   { label: 'Declined payment', number: '4000 0000 0000 9995' },
 ];
 </script>
+
+
