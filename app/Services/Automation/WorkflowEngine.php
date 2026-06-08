@@ -23,7 +23,8 @@ class WorkflowEngine
             ->get();
 
         foreach ($automations as $automation) {
-            $matched = str_contains(strtolower($message), strtolower($automation->trigger));
+            $flow = is_array($automation->flow) ? $automation->flow : [];
+            $matched = $this->matchesAutomation($automation, $message, $flow);
             $status = $matched ? 'matched' : 'skipped';
             $error = null;
 
@@ -48,7 +49,23 @@ class WorkflowEngine
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
+
+            if ($matched && ($flow['stop_after_match'] ?? false)) {
+                break;
+            }
         }
+    }
+
+    private function matchesAutomation(AiAutomation $automation, string $message, array $flow): bool
+    {
+        $trigger = trim(strtolower((string) $automation->trigger));
+        $match = $flow['match'] ?? 'contains';
+
+        if (in_array($trigger, ['*', 'all', 'any'], true) || $match === 'all_messages') {
+            return trim($message) !== '';
+        }
+
+        return str_contains(strtolower($message), $trigger);
     }
 
     private function executeActions(Conversation $conversation, AiAutomation $automation, string $message): void
