@@ -57,7 +57,16 @@ class PageController extends Controller
 
     public function register(): Response
     {
-        return Inertia::render('Auth/Register');
+        $pendingRegistration = session('pending_registration');
+
+        return Inertia::render('Auth/Register', [
+            'pendingRegistration' => $pendingRegistration ? [
+                'name' => $pendingRegistration['name'],
+                'email' => $pendingRegistration['email'],
+                'company' => $pendingRegistration['company'],
+                'expires_at' => $pendingRegistration['expires_at'],
+            ] : null,
+        ]);
     }
 
     public function forgot(): Response

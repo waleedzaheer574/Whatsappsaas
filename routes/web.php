@@ -23,6 +23,8 @@ Route::prefix('auth')->name('auth.')->group(function () {
     Route::post('/login', [AuthenticatedSessionController::class, 'store'])->name('login.store');
     Route::get('/register', [PageController::class, 'register'])->name('register');
     Route::post('/register', [RegisteredUserController::class, 'store'])->name('register.store');
+    Route::post('/register/verify', [RegisteredUserController::class, 'verify'])->name('register.verify');
+    Route::post('/register/resend', [RegisteredUserController::class, 'resend'])->name('register.resend');
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
     Route::get('/forgot-password', [PageController::class, 'forgot'])->name('forgot');
     Route::get('/verify-email', [PageController::class, 'verify'])->name('verify');
