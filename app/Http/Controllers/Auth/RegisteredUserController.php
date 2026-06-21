@@ -21,7 +21,7 @@ class RegisteredUserController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'company' => ['required', 'string', 'max:255'],
-            'password' => ['required', Password::defaults()],
+            'password' => ['required', 'string', Password::min(8)->letters()->mixedCase()->numbers()->symbols()],
         ]);
 
         $code = (string) random_int(100000, 999999);
