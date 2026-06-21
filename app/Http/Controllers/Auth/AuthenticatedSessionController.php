@@ -20,7 +20,7 @@ class AuthenticatedSessionController extends Controller
 
         if (! Auth::attempt($request->only('email', 'password'), (bool) ($credentials['remember'] ?? false))) {
             throw ValidationException::withMessages([
-                'email' => 'Email ya password ghalat hai.',
+                'email' => 'The provided email or password is incorrect.',
             ]);
         }
 

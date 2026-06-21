@@ -36,7 +36,12 @@ class RegisteredUserController extends Controller
 
         $this->sendVerificationCode($data['email'], $data['name'], $code);
 
-        return back()->with('success', 'Verification code sent to '.$data['email'].'. Enter the code to create your account.');
+        $message = 'Verification code sent to '.$data['email'].'. Enter the code to create your account.';
+        if (config('app.env') === 'local') {
+            $message .= ' (Local Dev Code: '.$code.')';
+        }
+
+        return back()->with('success', $message);
     }
 
     public function verify(Request $request): RedirectResponse
@@ -71,7 +76,7 @@ class RegisteredUserController extends Controller
 
         if (! Hash::check($data['code'], $pending['code_hash'])) {
             throw ValidationException::withMessages([
-                'code' => 'Verification code ghalat hai.',
+                'code' => 'The verification code is incorrect.',
             ]);
         }
 
@@ -147,17 +152,29 @@ class RegisteredUserController extends Controller
         $request->session()->put('pending_registration', $pending);
         $this->sendVerificationCode($pending['email'], $pending['name'], $code);
 
-        return back()->with('success', 'A new verification code has been sent to '.$pending['email'].'.');
+        $message = 'A new verification code has been sent to '.$pending['email'].'.';
+        if (config('app.env') === 'local') {
+            $message .= ' (Local Dev Code: '.$code.')';
+        }
+
+        return back()->with('success', $message);
     }
 
     private function sendVerificationCode(string $email, string $name, string $code): void
     {
-        Mail::raw(
-            "Hi {$name},\n\nYour ChatFlow AI verification code is: {$code}\n\nThis code will expire in 10 minutes.\n\nIf you did not request this, please ignore this email.",
-            fn ($message) => $message
-                ->to($email)
-                ->subject('Your ChatFlow AI verification code')
-        );
+        try {
+            Mail::raw(
+                "Hi {$name},\n\nYour ChatFlow AI verification code is: {$code}\n\nThis code will expire in 10 minutes.\n\nIf you did not request this, please ignore this email.",
+                fn ($message) => $message
+                    ->to($email)
+                    ->subject('Your ChatFlow AI verification code')
+            );
+        } catch (\Throwable $e) {
+            report($e);
+            if (config('app.env') !== 'local') {
+                throw $e;
+            }
+        }
     }
 
     private function sendAccountCreatedEmail(string $email, string $name): void
