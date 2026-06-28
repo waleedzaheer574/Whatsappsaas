@@ -34,12 +34,14 @@ class RegisteredUserController extends Controller
             'expires_at' => now()->addMinutes(10)->toIso8601String(),
         ]);
 
-        $this->sendVerificationCode($data['email'], $data['name'], $code);
+        try {
+            $this->sendVerificationCode($data['email'], $data['name'], $code);
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->withInput()->with('error', 'Failed to send verification email. Please check your SMTP settings in the .env file. Error: ' . $e->getMessage());
+        }
 
         $message = 'Verification code sent to '.$data['email'].'. Enter the code to create your account.';
-        if (config('app.env') === 'local') {
-            $message .= ' (Local Dev Code: '.$code.')';
-        }
 
         return back()->with('success', $message);
     }
@@ -146,44 +148,45 @@ class RegisteredUserController extends Controller
         }
 
         $code = (string) random_int(100000, 999999);
+
+        try {
+            $this->sendVerificationCode($pending['email'], $pending['name'], $code);
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->with('error', 'Failed to send verification email. Please check your SMTP settings in the .env file. Error: ' . $e->getMessage());
+        }
+
         $pending['code_hash'] = Hash::make($code);
         $pending['expires_at'] = now()->addMinutes(10)->toIso8601String();
 
         $request->session()->put('pending_registration', $pending);
-        $this->sendVerificationCode($pending['email'], $pending['name'], $code);
 
         $message = 'A new verification code has been sent to '.$pending['email'].'.';
-        if (config('app.env') === 'local') {
-            $message .= ' (Local Dev Code: '.$code.')';
-        }
 
         return back()->with('success', $message);
     }
 
     private function sendVerificationCode(string $email, string $name, string $code): void
     {
-        try {
-            Mail::raw(
-                "Hi {$name},\n\nYour ChatFlow AI verification code is: {$code}\n\nThis code will expire in 10 minutes.\n\nIf you did not request this, please ignore this email.",
-                fn ($message) => $message
-                    ->to($email)
-                    ->subject('Your ChatFlow AI verification code')
-            );
-        } catch (\Throwable $e) {
-            report($e);
-            if (config('app.env') !== 'local') {
-                throw $e;
-            }
-        }
+        Mail::raw(
+            "Hi {$name},\n\nYour ChatFlow AI verification code is: {$code}\n\nThis code will expire in 10 minutes.\n\nIf you did not request this, please ignore this email.",
+            fn ($message) => $message
+                ->to($email)
+                ->subject('Your ChatFlow AI verification code')
+        );
     }
 
     private function sendAccountCreatedEmail(string $email, string $name): void
     {
-        Mail::raw(
-            "Hi {$name},\n\nYour ChatFlow AI account has been successfully created.\n\nYou can now log in and continue setting up your workspace.\n\nThank you,\nChatFlow AI",
-            fn ($message) => $message
-                ->to($email)
-                ->subject('Your ChatFlow AI account is ready')
-        );
+        try {
+            Mail::raw(
+                "Hi {$name},\n\nYour ChatFlow AI account has been successfully created.\n\nYou can now log in and continue setting up your workspace.\n\nThank you,\nChatFlow AI",
+                fn ($message) => $message
+                    ->to($email)
+                    ->subject('Your ChatFlow AI account is ready')
+            );
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 }
