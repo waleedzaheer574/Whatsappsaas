@@ -2037,6 +2037,7 @@ function refreshLiveData() {
     preserveScroll: true,
     preserveState: true,
     replace: true,
+    showProgress: false,
     onFinish: () => {
       isPollingLiveData.value = false;
     },

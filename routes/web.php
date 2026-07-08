@@ -5,6 +5,7 @@ use App\Http\Controllers\DashboardActionController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\Auth\PasswordResetController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [PageController::class, 'landing'])->name('home');
@@ -27,8 +28,12 @@ Route::prefix('auth')->name('auth.')->group(function () {
     Route::post('/register/resend', [RegisteredUserController::class, 'resend'])->name('register.resend');
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
     Route::get('/forgot-password', [PageController::class, 'forgot'])->name('forgot');
+    Route::post('/forgot-password', [PasswordResetController::class, 'storeLink'])->name('forgot.store');
     Route::get('/verify-email', [PageController::class, 'verify'])->name('verify');
 });
+
+Route::get('/auth/reset-password/{token}', [PasswordResetController::class, 'createReset'])->name('password.reset');
+Route::post('/auth/reset-password', [PasswordResetController::class, 'storeReset'])->name('password.update');
 
 Route::prefix('app')->middleware('auth')->name('dashboard.')->group(function () {
     Route::get('/billing', [PageController::class, 'dashboard'])->defaults('screen', 'Subscription Billing')->name('billing');
