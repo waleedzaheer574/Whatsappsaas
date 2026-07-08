@@ -205,7 +205,10 @@ onMounted(() => {
   (window as any).chatflowConfirm = confirmAction;
   (window as any).chatflowToast = (type: ToastType, message: string) => pushToast(type, message);
 
-  removeStartListener = router.on('start', () => {
+  removeStartListener = router.on('start', (event) => {
+    if (event.detail.visit.showProgress === false) {
+      return;
+    }
     isProcessing.value = true;
   });
   removeFinishListener = router.on('finish', () => {
